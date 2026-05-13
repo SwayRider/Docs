@@ -10,7 +10,7 @@ The platform is delivered as a **subscription-based service** with a free tier o
 
 SwayRider is a mature monorepo containing:
 
-- **6 Go backend microservices** communicating over gRPC
+- **7 Go backend services** — an API gateway (`swayrider-api`) plus six microservices communicating over gRPC
 - **Android mobile application** (Kotlin, Jetpack Compose, Clean Architecture)
 - **Python data pipeline** for processing OpenStreetMap data into vector tiles, routing graphs, and geocoding indices
 
@@ -65,7 +65,14 @@ The data pipeline and regional routing architecture are designed to support incr
 │                    Mobile Clients                        │
 │         Android (Compose)  ·  iOS (KMP)                 │
 └──────────────────────────┬──────────────────────────────┘
-                           │ REST / gRPC
+                           │ HTTPS
+┌──────────────────────────▼──────────────────────────────┐
+│              swayrider-api  (API Gateway)                │
+│  - JWT validation & rate limiting (Redis sliding window) │
+│  - Redis Streams queue + SSE for routing & search        │
+│  - HTTP reverse proxy for tiles and auth web pages       │
+└──────────────────────────┬──────────────────────────────┘
+                           │ gRPC
 ┌──────────────────────────▼──────────────────────────────┐
 │                  Backend Services (Go)                   │
 ├──────────────┬──────────────┬───────────────────────────┤
@@ -79,15 +86,15 @@ The data pipeline and regional routing architecture are designed to support incr
 │   queries    │ - Pelias fan │ - MBTiles (MVT)           │
 │ - Borders    │   out        │ - Multi-zoom hierarchy    │
 └──────────────┴──────────────┴───────────────────────────┘
-                           │ gRPC
+                           │ gRPC / SQL
 ┌──────────────────────────▼──────────────────────────────┐
 │                   Data Layer                             │
-├─────────────────┬───────────────────────────────────────┤
-│  PostgreSQL     │  Geodata (filesystem)                 │
-│  - Users        │  - Valhalla routing tiles             │
-│  - Tokens       │  - Pelias geocoding data              │
-│  - JWT keys     │  - Region contours & border crossings │
-└─────────────────┴───────────────────────────────────────┘
+├─────────────────┬──────────────┬────────────────────────┤
+│  PostgreSQL     │  Redis       │  Geodata (filesystem)  │
+│  - Users        │  - Job queue │  - Valhalla tiles      │
+│  - Tokens       │  - Rate limit│  - Pelias data         │
+│  - JWT keys     │    windows   │  - Region borders      │
+└─────────────────┴──────────────┴────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
 │              Data Pipeline (Python)                      │
