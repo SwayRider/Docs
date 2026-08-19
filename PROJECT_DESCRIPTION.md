@@ -11,7 +11,7 @@ The platform is delivered as a **subscription-based service** with a free tier o
 SwayRider is a mature monorepo containing:
 
 - **7 Go backend services** — an API gateway (`swayrider-api`) plus six microservices communicating over gRPC
-- **Android mobile application** (Kotlin, Jetpack Compose, Clean Architecture)
+- **Flutter mobile application** — a single Dart codebase covering both iOS and Android
 - **Python data pipeline** for processing OpenStreetMap data into vector tiles, routing graphs, and geocoding indices
 
 Current geographic coverage is focused on **Western Europe**: Belgium, Netherlands, Luxembourg, France, Germany, and the Iberian Peninsula.
@@ -22,8 +22,7 @@ Current geographic coverage is focused on **Western Europe**: Belgium, Netherlan
 
 | Platform | Technology | Status |
 |----------|-----------|--------|
-| Android | Kotlin, Jetpack Compose | In development |
-| iOS | Kotlin Multiplatform (KMP) | Planned |
+| iOS + Android | Flutter (Dart) | In development |
 
 The mobile apps are the primary user-facing interface.
 
@@ -63,7 +62,7 @@ The data pipeline and regional routing architecture are designed to support incr
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Mobile Clients                        │
-│         Android (Compose)  ·  iOS (KMP)                 │
+│            Flutter (iOS · Android)                       │
 └──────────────────────────┬──────────────────────────────┘
                            │ HTTPS
 ┌──────────────────────────▼──────────────────────────────┐
@@ -117,4 +116,4 @@ The Docker Compose layered architecture (layer-00 base, layer-10 geospatial, lay
 - **Custom vector tiles**: Map data is generated in-house from OpenStreetMap using a Python pipeline (Tippecanoe, Osmium). This provides full control over map styling, feature selection, and data freshness.
 - **Regional routing**: Routes are calculated per-region with seamless border crossing handling, enabling horizontal scaling across geographies.
 - **gRPC-first**: All inter-service communication uses gRPC with Protocol Buffers. External APIs are exposed via gRPC-gateway.
-- **Multiplatform mobile**: Kotlin Multiplatform (KMP) enables shared business logic between Android and iOS while maintaining native UI on each platform.
+- **Cross-platform mobile**: A single Flutter (Dart) codebase serves both iOS and Android, sharing UI, business logic, and API integration.
