@@ -20,7 +20,7 @@ The `.osm.pbf` files are already produced by `build-osm` and available at `resul
 
 ## Technical Specification
 
-### 1. `data-pipeline/config/config-dev.yml` (and `config-mac.yml`)
+### 1. `data-pipeline/config/config-dev.yml`
 
 Add `polylines` to the `pelias.repos` list:
 
@@ -100,12 +100,12 @@ Note: `pelias-prod.json` does not need a `polylines` block — the importer is o
 
 ## Acceptance Criteria
 
-- [ ] `polylines:v2.2.0` (or latest compatible) added to `pelias.repos` in all config files
-- [ ] `import_pelias_polylines` function exists in `pelias_funcs.py`
-- [ ] Polylines import step called after OSM import in `pelias_pipeline.py`
-- [ ] `pelias-load.json` template includes `polylines` import block pointing to the PBF file
-- [ ] Pipeline runs to completion without error on a test region
-- [ ] Elasticsearch index contains `street` records with `source: openstreetmap` from the polylines import
+- [x] `polylines:v2.2.0` (or latest compatible) added to `pelias.repos` in all config files
+- [x] `import_pelias_polylines` function exists in `pelias_funcs.py`
+- [x] Polylines import step called after OSM import in `pelias_pipeline.py`
+- [x] `pelias-load.json` template includes `polylines` import block pointing to the PBF file
+- [x] Pipeline runs to completion without error on a test region
+- [x] Elasticsearch index contains `street` records with `source: openstreetmap` from the polylines import
 
 ## Testing Notes
 

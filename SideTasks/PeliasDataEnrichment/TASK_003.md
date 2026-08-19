@@ -39,7 +39,7 @@ regions:
 
 Derive bbox values from the existing `srtm` extents already defined per region.
 
-### 2. `data-pipeline/config/config-mac.yml`
+### 2. `data-pipeline/config/config-dev.yml`
 
 Add `csv` importer to `pelias.repos`:
 
@@ -225,17 +225,17 @@ Add `overture_data_path` to the template variables in `create_pelias_config` in 
 
 ## Acceptance Criteria
 
-- [ ] `bbox` field added to all regions in `config-mac.yml`
-- [ ] `csv:latest` added to `pelias.repos` in `config-mac.yml`
-- [ ] `Region.bbox()` method implemented
-- [ ] `download_overture_data` downloads both `place` and `address` themes for a test region
-- [ ] Both CSV converters stream without loading full file into memory
-- [ ] Address records with no `street` are skipped
-- [ ] `import_pelias_csv` runs the pelias-csv-importer successfully
-- [ ] `pelias-load.json` template references both CSV files
-- [ ] Elasticsearch index contains `venue` records with `source: overture` after pipeline run
-- [ ] Elasticsearch index contains `address` records with `source: overture` for countries missing from OA (e.g. Hungary)
-- [ ] Overture download failure is non-fatal (warning logged, pipeline continues)
+- [x] `bbox` field added to all regions in `config-dev.yml`
+- [x] `csv:latest` added to `pelias.repos` in `config-dev.yml`
+- [x] `Region.bbox()` method implemented
+- [x] `download_overture_data` downloads both `place` and `address` themes for a test region
+- [x] Both CSV converters stream without loading full file into memory
+- [x] Address records with no `street` are skipped
+- [x] `import_pelias_csv` runs the pelias-csv-importer successfully
+- [x] `pelias-load.json` template references both CSV files
+- [x] Elasticsearch index contains `venue` records with `source: overture` after pipeline run
+- [x] Elasticsearch index contains `address` records with `source: overture` for countries missing from OA (e.g. Hungary)
+- [x] Overture download failure is non-fatal (warning logged, pipeline continues)
 
 ## Testing Notes
 

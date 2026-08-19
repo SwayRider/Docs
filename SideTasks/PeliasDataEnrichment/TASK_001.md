@@ -4,7 +4,9 @@
 
 ## Overview
 
-Audit and fix missing OpenAddresses files in `config/config-mac.yml`. This is a config-only change — no pipeline code modifications required.
+Audit and fix missing OpenAddresses files in `config/config-dev.yml`. This is a config-only change — no pipeline code modifications required.
+
+> Note: this task and its research were originally done against `config-mac.yml`; that file has since been renamed/consolidated into `config-dev.yml`. References below have been updated accordingly.
 
 All gaps below have been validated against the live OA GitHub source repository
 (`https://github.com/openaddresses/openaddresses/tree/master/sources`).
@@ -12,7 +14,7 @@ Each gap is marked ✅ (data exists, add it), ⚠️ (partial data only), or ❌
 
 ## File to Change
 
-- `data-pipeline/config/config-mac.yml`
+- `data-pipeline/config/config-dev.yml`
 
 ---
 
@@ -222,14 +224,14 @@ Validated via web search March 2026. Each country below has no OA source and was
 
 ## Acceptance Criteria
 
-- [ ] `de/ni/statewide.csv` added to all 5 affected regions
-- [ ] `de/mv/statewide.csv` added to all 5 affected regions
-- [ ] `de/berlin.csv` added to all 5 affected regions (note: NOT `de/be/statewide.csv`)
-- [ ] All 7 `de/by/region_*.csv` files added to all 5 affected regions
-- [ ] `se/municipality_of_kristinehamn.csv` added to all 4 Sweden regions
-- [ ] `se/municipality_of_Österåker.csv` added to all 4 Sweden regions
-- [ ] `nl/countrywide.csv` added to `west-europe` core
-- [ ] `be/wal/bosa-region-wallonia-fr.csv` added to `west-europe` core
+- [x] `de/ni/statewide.csv` added to all 5 affected regions
+- [x] `de/mv/statewide.csv` added to all 5 affected regions
+- [x] `de/berlin.csv` added to all 5 affected regions (note: NOT `de/be/statewide.csv`)
+- [x] All 7 `de/by/region_*.csv` files added to all 5 affected regions
+- [x] `se/municipality_of_kristinehamn.csv` added to all 4 Sweden regions
+- [x] `se/municipality_of_Österåker.csv` added to all 4 Sweden regions
+- [x] `nl/countrywide.csv` added to `west-europe` core
+- [x] `be/wal/bosa-region-wallonia-fr.csv` added to `west-europe` core
 
 ## Testing Notes
 

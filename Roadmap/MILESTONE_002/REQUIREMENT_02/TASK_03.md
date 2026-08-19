@@ -58,9 +58,9 @@ Add the following test cases:
 
 ## Acceptance Criteria
 
-- [ ] A request with scenic preference set returns a route preferring winding roads (verified via Valhalla costing config)
-- [ ] A route crossing at least two regional Valhalla instances is calculated and returned as a single merged geometry
-- [ ] A request with origin or destination outside all covered regions returns a well-formed gRPC error (`NOT_FOUND`)
-- [ ] A request when a Valhalla backend is unreachable returns a well-formed gRPC error (`UNAVAILABLE`)
-- [ ] All existing unit tests pass
-- [ ] All new unit tests for error cases pass
+- [x] A request with scenic preference set returns a route preferring winding roads (verified via Valhalla costing config)
+- [x] A route crossing at least two regional Valhalla instances is calculated and returned as a single merged geometry
+- [x] A request with origin or destination outside all covered regions returns a well-formed gRPC error (`NOT_FOUND`)
+- [x] A request when a Valhalla backend is unreachable returns a well-formed gRPC error (`UNAVAILABLE`)
+- [x] All existing unit tests pass
+- [x] All new unit tests for error cases pass

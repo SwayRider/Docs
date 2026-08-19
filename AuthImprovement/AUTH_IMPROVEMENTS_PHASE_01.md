@@ -2,82 +2,35 @@
 
 ## Overview
 
-Phase 1 addresses the most critical security gaps in the authservice:
-- **Rate limiting** on login attempts (Redis)
-- **Account lockout** after failed attempts
-- **Audit logging** for authentication events
-- **JWT private key encryption** at rest
-
-**Timeline**: 2 weeks
-**Priority**: CRITICAL
+- **Rate limiting** on login attempts — ✅ **DONE**, implemented differently than originally scoped here (see below)
+- **Account lockout** after failed attempts — ✅ **DONE**, same mechanism as rate limiting
+- **Audit logging** for authentication events — ⏳ **PENDING**
+- **JWT private key encryption** at rest — ⏳ **PENDING**
 
 ---
 
-## 1. Rate Limiting (Redis)
+## 1. Rate Limiting — ✅ DONE (Postgres, not Redis)
 
-### Configuration
-| Parameter | Env Variable | Default |
-|-----------|--------------|---------|
-| Redis Host | `REDIS_HOST` | localhost |
-| Redis Port | `REDIS_PORT` | 6379 |
-| Redis Password | `REDIS_PASSWORD` | (empty) |
-| IP Rate Limit | `RATE_LIMIT_IP_MAX` | 10 attempts per 60s |
-| Email Rate Limit | `RATE_LIMIT_EMAIL_MAX` | 5 attempts per 300s |
+This doc originally proposed a Redis-backed sliding-window limiter. What actually shipped is a Postgres-backed one instead — no new infra dependency, same effect:
 
-### Implementation
-- New package: `backend/swlib/ratelimit/`
-- Uses sliding window counter pattern in Redis
-- Key format: `ratelimit:ip:{ip}` and `ratelimit:email:{email}`
-- Returns `codes.ResourceExhausted` when limited
-- Resets counters on successful login
+- `security_throttle` table (migration `0001_011_create_security_throttle_table.sql`) tracks attempts per scope (e.g. login, `ScopeEmailSendByIP`) with a sliding window.
+- `authservice/internal/db/throttle.go` — `RecordAttemptResult`, `IsAttemptLocked`.
+- `authservice/internal/server/throttle.go` — `ThrottleConfig`, wired into login/token endpoints in `authentication.go` and `cmd/authservice/main.go`.
+- Separately, general per-request gRPC rate limiting (in-memory token bucket) exists at `swlib/ratelimit/limiter.go` + `swlib/http/middlewares/ratelimit.go`, applied via `app.RateLimitInterceptor`.
 
-### Docker Compose
-Add Redis container to `infra/dev/layer-00/compose.yaml`
+No further work needed here unless requirements change (e.g. multi-instance deployment where a shared Redis-backed limiter would matter more than it does today).
 
 ---
 
-## 2. Account Lockout
+## 2. Account Lockout — ✅ DONE (same table as rate limiting)
 
-### Database Migration (`0001_008_login_attempts.sql`)
-```sql
-CREATE TABLE login_attempts (
-    id SERIAL PRIMARY KEY,
-    user_id UUID REFERENCES users(id),
-    email TEXT NOT NULL,
-    ip_address TEXT NOT NULL,
-    success BOOLEAN NOT NULL DEFAULT false,
-    attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE account_lockouts (
-    id SERIAL PRIMARY KEY,
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id),
-    locked_until TIMESTAMPTZ NOT NULL,
-    failed_attempts INT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-### Progressive Lockout Logic
-- 1-5 attempts: No lockout, just track
-- 6: Lock 15 min
-- 7: Lock 30 min
-- 8: Lock 1 hour
-- 9: Lock 4 hours
-- 10+: Lock 24 hours (max)
-
-### New DB Functions
-- `RecordLoginAttempt()`
-- `IsAccountLocked()`
-- `LockAccount()`
-- `UnlockAccount()` (admin)
-- `CleanupLoginAttempts()`
+Progressive lockout is implemented via the same `security_throttle` sliding-window mechanism above, rather than the separate `login_attempts` / `account_lockouts` tables originally proposed. No further work needed.
 
 ---
 
-## 3. Audit Logging
+## 3. Audit Logging — ⏳ PENDING
 
-### Database Migration (`0001_009_audit_log.sql`)
+### Database Migration (`0001_XXX_audit_log.sql`)
 ```sql
 CREATE TABLE audit_log (
     id BIGSERIAL PRIMARY KEY,
@@ -90,6 +43,7 @@ CREATE TABLE audit_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+Migration numbers must be chosen against the actual current sequence in `authservice/migrations/` at implementation time — it has moved past `0001_011` since this doc was written.
 
 ### Event Types
 - `auth.login.success/failure`
@@ -103,17 +57,17 @@ CREATE TABLE audit_log (
 - `auth.admin.create/change_account`
 
 ### Implementation
-- New package: `backend/services/authservice/internal/audit/`
+- New package: `authservice/internal/audit/`
 - Async logging option for performance
 - 90-day retention with daily cleanup routine
 
 ---
 
-## 4. JWT Private Key Encryption
+## 4. JWT Private Key Encryption — ⏳ PENDING
 
 ### Approach: AES-256-GCM with env var master key
 
-### Database Migration (`0001_010_key_encryption.sql`)
+### Database Migration
 ```sql
 ALTER TABLE jwt_keys ADD COLUMN encryption_key_id TEXT;
 ALTER TABLE jwt_keys ADD COLUMN encryption_iv TEXT;
@@ -121,80 +75,18 @@ ALTER TABLE jwt_keys ADD COLUMN encryption_tag TEXT;
 ```
 
 ### Implementation
-- New package: `backend/swlib/encryption/`
+- New package: `swlib/encryption/`
 - Master key: `ENCRYPTION_MASTER_KEY` (base64-encoded 256-bit)
 - Generate key: `openssl rand -base64 32`
 - Encrypt before storing, decrypt in-memory only for signing
 - Supports gradual migration (existing keys remain readable)
+- Touches `authservice/internal/db/jwt_keys.go`, where private keys are currently read/written in plaintext
 
 ---
 
-## File Structure
-
-```
-backend/
-├── swlib/
-│   ├── ratelimit/
-│   │   ├── ratelimit.go
-│   │   ├── redis.go
-│   │   └── ratelimit_test.go
-│   └── encryption/
-│       ├── encryption.go
-│       ├── aes_gcm.go
-│       └── encryption_test.go
-└── services/authservice/
-    ├── internal/
-    │   ├── db/
-    │   │   ├── login_attempts.go
-    │   │   └── lockout.go
-    │   ├── audit/
-    │   │   ├── audit.go
-    │   │   ├── postgres.go
-    │   │   └── events.go
-    │   └── server/
-    │       └── authentication.go (modified)
-    └── migrations/
-        ├── 0001_008_login_attempts.sql
-        ├── 0001_009_audit_log.sql
-        └── 0001_010_key_encryption.sql
-```
-
----
-
-## Rollout Plan
-
-### Week 1
-- Day 1-2: Rate limiting (Redis integration)
-- Day 3-4: Account lockout (migrations, logic)
-- Day 5: Integration testing
-
-### Week 2
-- Day 1-2: Audit logging
-- Day 3-4: JWT key encryption
-- Day 5: E2E testing, docs
-
----
-
-## Environment Variables
+## Environment Variables (pending items only)
 
 ```bash
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Rate Limiting
-RATE_LIMIT_IP_MAX=10
-RATE_LIMIT_IP_WINDOW=60
-RATE_LIMIT_EMAIL_MAX=5
-RATE_LIMIT_EMAIL_WINDOW=300
-
-# Account Lockout
-LOCKOUT_MAX_ATTEMPTS=5
-LOCKOUT_DURATION=900
-LOCKOUT_PROGRESSIVE=true
-LOCKOUT_MAX_DURATION=86400
-
 # Audit
 AUDIT_RETENTION_DAYS=90
 AUDIT_ASYNC=true

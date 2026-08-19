@@ -1,6 +1,8 @@
 # TASK_004 — Add GTFS Transit Stops
 
-**Status**: Done
+**Status**: Done (importer wired) — feeds currently disabled pending source verification
+
+The `transit` importer and `gtfs_feeds` plumbing described below are implemented in `config-dev.yml`, but the feed URLs are currently commented out (`# TODO: re-enable gtfs_feeds when reliable data sources are confirmed`) rather than active. See `data-pipeline/config/gtfs-sources.md` for per-feed status.
 
 ## Overview
 
@@ -185,15 +187,15 @@ Document all feed sources, update frequencies, registration requirements, and fe
 
 ## Acceptance Criteria
 
-- [ ] `transit:v1.0.0` added to `pelias.repos` in all config files
-- [ ] `gtfs_feeds` field added to at least the `west-europe` and `uk-iceland` regions
-- [ ] `Region.gtfs_feeds()` method implemented
-- [ ] `download_gtfs_feeds` downloads all configured feeds for a test region
-- [ ] `import_pelias_transit` runs the pelias-transit importer successfully
-- [ ] `pelias-load.json` template includes `transit` import block
-- [ ] Regions without `gtfs_feeds` configured are skipped without error
-- [ ] Elasticsearch index contains `venue` records with transit stop names after pipeline run
-- [ ] `data-pipeline/config/gtfs-sources.md` documents all feed URLs and access requirements
+- [x] `transit:v1.0.0` added to `pelias.repos` in all config files
+- [x] `gtfs_feeds` field added to at least the `west-europe` and `uk-iceland` regions (currently commented out — see status note above)
+- [x] `Region.gtfs_feeds()` method implemented
+- [x] `download_gtfs_feeds` downloads all configured feeds for a test region
+- [x] `import_pelias_transit` runs the pelias-transit importer successfully
+- [x] `pelias-load.json` template includes `transit` import block
+- [x] Regions without `gtfs_feeds` configured are skipped without error
+- [ ] Elasticsearch index contains `venue` records with transit stop names after pipeline run — blocked until feeds are re-enabled
+- [x] `data-pipeline/config/gtfs-sources.md` documents all feed URLs and access requirements
 
 ## Testing Notes
 
