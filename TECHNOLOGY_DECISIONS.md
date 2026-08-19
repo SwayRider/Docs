@@ -32,35 +32,27 @@ Primary database for auth and user data:
 
 ## Mobile
 
-### Kotlin Multiplatform (KMP)
+### Flutter (Dart)
 
-iOS and Android share business logic via KMP:
+The mobile client (the earlier Kotlin/Jetpack Compose prototype) was replaced by a single Flutter app covering iOS and Android:
 
-- **Code reuse**: Network clients, auth logic, domain layer shared across platforms
-- **Native UI**: Each platform renders native UI (Jetpack Compose on Android, SwiftUI on iOS)
-- **Team efficiency**: Single codebase for business rules, API integration, state management
-- **Gradual adoption**: Existing Android codebase serves as the KMP common module foundation
+- **Single codebase**: One Dart codebase for both platforms — UI, business logic, and API integration are shared; no per-platform UI layer to maintain
+- **Declarative UI**: Widget-based reactive UI with Material 3 theming and a shared design system (color palette, theme, responsive dimension sets)
+- **Team efficiency**: One language and one codebase to maintain instead of separate Android/iOS implementations
+- **State management**: Provider-based DI with an MVVM + Command/Result pattern — view models expose `Command` objects and sealed `Result<T>` types for actions
+- **Tooling**: `go_router` for navigation, freezed + json_serializable for models, `shared_preferences` for token persistence
 
-### Jetpack Compose (Android)
+### Clean Architecture (MVVM)
 
-Android UI is built entirely with Jetpack Compose:
-
-- **Declarative UI**: Modern reactive UI paradigm
-- **Kotlin-first**: Consistent language across shared and platform code
-- **Material3**: Native design system support
-- **StateFlow integration**: Clean state management with ViewModels
-
-### Clean Architecture
-
-Mobile apps follow strict layer separation:
+Mobile app follows a layered architecture (based on the Flutter "Compass App" sample):
 
 ```
-UI → ViewModel → Domain → Data → Core
+UI (widgets) → ViewModel → Repository → API client / storage
 ```
 
-- **Testability**: Domain layer is framework-agnostic, easily unit tested
-- **Separation of concerns**: UI never calls data layer directly
-- **Manual DI**: No framework overhead; dependencies wired in app entry point
+- **Testability**: View models and repositories are framework-agnostic, easily unit tested
+- **Separation of concerns**: UI never calls the API client directly; repositories mediate all data access
+- **Manual DI**: Provider wiring in the app entry point; no code-gen DI framework
 
 ## Data Pipeline
 
@@ -138,9 +130,10 @@ Alternatives considered:
 Infrastructure is organized in dependency layers:
 
 ```
-layer-00 (Base):        Traefik, PostgreSQL, Elasticsearch, Minio
+layer-00 (Base):        Traefik, PostgreSQL, Elasticsearch, Redis, WireGuard
 layer-10 (Geospatial):  Valhalla (per-region), Pelias (per-region)
 layer-20 (SwayRider):   Auth, Mail, Region, Router, Search, Tiles services
+layer-30 (Web):         swayrider-api (API gateway)
 ```
 
 Each layer builds on the previous. This supports:
@@ -150,21 +143,21 @@ Each layer builds on the previous. This supports:
 
 ### Container Registry
 
-Service containers are pushed to a private registry (`docker-registry.hevanto-it.com/swayrider`) via multi-platform builds (linux/amd64, linux/arm64).
+Service containers are pushed to GitHub Container Registry (`ghcr.io/swayrider`) via multi-platform builds (linux/amd64, linux/arm64).
 
 ## Removed / Deprecated Technologies
 
 | Technology | Status | Reason |
 |------------|--------|--------|
 | React web auth portal | Deprecated | Mobile-first strategy; web removed from scope |
-| Minio (object storage) | Being removed | Services migrating to filesystem-based storage |
-| XML layouts (Android) | Removed | Replaced by Jetpack Compose |
+| Minio (object storage) | Removed | Mail templates moved to database-backed storage |
+| Kotlin/Jetpack Compose Android prototype | Removed | Replaced by the Flutter app (single iOS + Android codebase) |
 
 ## Decisions Pending
 
 | Topic | Status |
 |-------|--------|
-| iOS implementation timeline | TBD — KMP adoption will be phased |
+| iOS release timeline | TBD — Flutter covers both platforms; iOS release follows Android MVP |
 | Cloud provider selection | TBD — MVP self-hosted; production cloud/colo evaluated at scale |
 | Subscription payment integration | TBD — Payment provider not yet selected |
 | Offline map download strategy | TBD — Tile bundling vs on-demand download |
