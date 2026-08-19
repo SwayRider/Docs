@@ -50,7 +50,7 @@ Because the download requires OS Data Hub credentials, the pipeline should read 
 
 Alternatively, files can be downloaded manually and placed in the pipeline download directory, with the pipeline step checking for their existence before attempting download.
 
-### 2. `data-pipeline/config/config-mac.yml`
+### 2. `data-pipeline/config/config-dev.yml`
 
 The `uk-iceland` region already exists. No new config structure is needed — the importer will be invoked conditionally when the region is `uk-iceland` (or when GB source files are present).
 

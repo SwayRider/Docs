@@ -59,7 +59,7 @@ Check availability in OA — some may not exist yet.
 For each gap:
 1. Verify the file exists in the OpenAddresses S3 bucket: `https://results.openaddresses.io/`
 2. Add the missing entry to `core.openaddresses` (or `overlap.openaddresses`) in `config/config-dev.yml`
-3. Add the same entry to any other config files (`config-mac.yml`, `config-test.yml`) that mirror the region definitions
+3. Add the same entry to any other config files that mirror the region definitions
 
 ---
 

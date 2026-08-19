@@ -53,10 +53,10 @@ Enhance error handling to return well-defined gRPC status codes:
 
 ## Acceptance Criteria
 
-- [ ] Request with origin or destination outside all covered regions returns gRPC `NOT_FOUND`
-- [ ] Request when Valhalla backend is unreachable returns gRPC `UNAVAILABLE`
-- [ ] Request with no route found returns gRPC `NOT_FOUND`
-- [ ] Internal errors are not leaked to clients (return generic message)
-- [ ] All existing unit tests continue to pass
-- [ ] New error case unit tests pass
-- [ ] Service compiles without errors
+- [x] Request with origin or destination outside all covered regions returns gRPC `NOT_FOUND`
+- [x] Request when Valhalla backend is unreachable returns gRPC `UNAVAILABLE`
+- [x] Request with no route found returns gRPC `NOT_FOUND`
+- [x] Internal errors are not leaked to clients (return generic message)
+- [x] All existing unit tests continue to pass
+- [x] New error case unit tests pass
+- [x] Service compiles without errors

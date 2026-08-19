@@ -75,10 +75,10 @@ These should work similarly to how `RouteType_RT_SCENIC` already sets presets.
 
 ## Acceptance Criteria
 
-- [ ] `RouteRequest` proto includes `scenic_preference`, `highway_avoidance`, `toll_avoidance`, `unpaved_handling` fields
-- [ ] `RouteResponse` proto includes human-readable summary with start/end region names
-- [ ] `createRequestOptions` correctly maps all four preference fields to Valhalla costing options
-- [ ] Scenic preference produces winding-road routes via Valhalla costing config
-- [ ] All existing unit tests continue to pass
-- [ ] New unit tests for preference field mapping pass
-- [ ] Service compiles without errors (`go build ./...` in `backend/`)
+- [x] `RouteRequest` proto includes `scenic_preference`, `highway_avoidance`, `toll_avoidance`, `unpaved_handling` fields
+- [x] `RouteResponse` proto includes human-readable summary with start/end region names
+- [x] `createRequestOptions` correctly maps all four preference fields to Valhalla costing options
+- [x] Scenic preference produces winding-road routes via Valhalla costing config
+- [x] All existing unit tests continue to pass
+- [x] New unit tests for preference field mapping pass
+- [x] Service compiles without errors (`go build ./...`)

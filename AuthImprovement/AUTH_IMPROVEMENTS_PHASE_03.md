@@ -2,18 +2,14 @@
 
 ## Overview
 
-Phase 3 adds advanced security features:
-- **Multi-Factor Authentication (MFA)** - TOTP-based, no external provider needed
-- **Session management** - Listing, idle timeout, concurrent limits
-- **User enumeration protection** - Consistent responses for all auth flows
-- **Secrets management** - Encrypted file for production, plain env vars for dev
-
-**Timeline**: 4 weeks
-**Priority**: MEDIUM-HIGH
+- **Multi-Factor Authentication (MFA)** — ⏳ **PENDING**
+- **Session management** — ⏳ **PENDING**
+- **User enumeration protection** — ✅ **DONE** (fixed 2026-08-17, see below)
+- **Secrets management** — ⏳ **PENDING**
 
 ---
 
-## 1. Multi-Factor Authentication (TOTP)
+## 1. Multi-Factor Authentication (TOTP) — ⏳ PENDING
 
 ### How TOTP Works
 
@@ -24,9 +20,9 @@ TOTP is an open standard (RFC 6238) that works **completely in-house**:
 4. App generates 6-digit codes every 30 seconds using HMAC-SHA1
 5. Server validates codes using the same algorithm
 
-**No external service, no API calls, no cost.**
+No external service, no API calls, no cost.
 
-### Configuration
+### Configuration (target)
 | Parameter | Env Variable | Default |
 |-----------|--------------|---------|
 | MFA Enabled | `MFA_ENABLED` | true |
@@ -35,16 +31,14 @@ TOTP is an open standard (RFC 6238) that works **completely in-house**:
 | Grace Period | `MFA_GRACE_PERIOD` | 1 (accept prev/next code) |
 | Backup Codes | `MFA_BACKUP_CODES` | 10 |
 
-### New Package: `backend/swlib/totp/`
+### New Package: `swlib/totp/`
 
 ```go
-// Package totp implements TOTP (RFC 6238) for multi-factor authentication.
-
 type Config struct {
-    SecretSize  int           // Bytes for secret generation (default: 20)
-    CodeLength  int           // Digits in code (default: 6)
-    TimeStep    time.Duration // Seconds per code (default: 30)
-    GracePeriod int           // Accept adjacent codes (default: 1)
+    SecretSize  int
+    CodeLength  int
+    TimeStep    time.Duration
+    GracePeriod int
 }
 
 func GenerateSecret() (string, error)
@@ -53,7 +47,7 @@ func Validate(secret, code string, t time.Time, cfg Config) (bool, error)
 func GenerateQRCodeURL(secret, email, issuer string) string
 ```
 
-### Database Migration (`0001_012_mfa.sql`)
+### Database Migration
 ```sql
 CREATE TABLE user_mfa (
     id SERIAL PRIMARY KEY,
@@ -73,6 +67,7 @@ CREATE TABLE mfa_backup_codes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
+Migration number must be chosen against the actual current sequence in `authservice/migrations/` at implementation time.
 
 ### New gRPC Endpoints
 - `SetupMFA` - Start enrollment (returns secret/QR URL)
@@ -91,28 +86,27 @@ User logs in → Password valid → MFA enabled?
 ```
 
 ### Backup Codes
-- 10 single-use codes during MFA setup
-- 8-character alphanumeric codes
+- 10 single-use codes during MFA setup, 8-character alphanumeric
 - Stored as Argon2id hashes
 - Can regenerate (invalidates old codes)
 
 ---
 
-## 2. Session Management
+## 2. Session Management — ⏳ PENDING
 
 ### Features
-1. **Session listing** - Users can see active sessions
-2. **Session revocation** - Users can terminate specific sessions
-3. **Idle timeout** - Auto-logout after inactivity (default: 15 min)
-4. **Concurrent session limit** - Max 5 active sessions per user
+1. Session listing — users can see active sessions
+2. Session revocation — users can terminate specific sessions
+3. Idle timeout — auto-logout after inactivity (default: 15 min)
+4. Concurrent session limit — max 5 active sessions per user
 
-### Configuration
+### Configuration (target)
 | Parameter | Env Variable | Default |
 |-----------|--------------|---------|
 | Idle Timeout | `SESSION_IDLE_TIMEOUT` | 900 seconds |
 | Max Sessions | `SESSION_MAX_CONCURRENT` | 5 |
 
-### Database Migration (`0001_013_sessions.sql`)
+### Database Migration
 ```sql
 CREATE TABLE user_sessions (
     id UUID PRIMARY KEY,
@@ -133,43 +127,32 @@ CREATE TABLE user_sessions (
 - `RevokeAllSessions` - Terminate all except current
 
 ### Behavior
-- On login: Check concurrent limit, revoke oldest if exceeded
-- On refresh: Check idle timeout, update last_activity
+- On login: check concurrent limit, revoke oldest if exceeded
+- On refresh: check idle timeout, update `last_activity`
 - Session stored with device info for user recognition
 
 ---
 
-## 3. User Enumeration Protection
+## 3. User Enumeration Protection — ✅ DONE
 
-### Changes
-| Endpoint | Current | Improved |
-|----------|---------|----------|
-| Login | Generic message ✓ | - |
-| Password Reset | Async ✓ | Add random delay |
-| Registration | Shows "email exists" | Generic "check your email" |
-| Email Verification | Async ✓ | - |
-
-### Implementation
-- Add random delays (0-1000ms) to async operations
-- Return consistent messages for all flows
-- Minimum processing time (500ms) for registration
+Fixed 2026-08-17 (see `authservice/CODE_REVIEW_2026-08.md`): login, registration, and password-reset flows now return uniform responses regardless of whether the email/account exists. No further work needed here; the original plan's "add random delay" and "minimum processing time" refinements remain optional hardening, not required.
 
 ---
 
-## 4. Secrets Management
+## 4. Secrets Management — ⏳ PENDING
 
 ### Design
-- **Development**: Unencrypted env vars / `.env` files
-- **Production**: Encrypted secrets file, decrypted with master key
+- **Development**: unencrypted env vars / `.env` files
+- **Production**: encrypted secrets file, decrypted with a master key
 
-### Configuration
+### Configuration (target)
 | Parameter | Env Variable | Default |
 |-----------|--------------|---------|
 | Environment | `ENV` | development |
 | Secrets File | `SECRETS_FILE` | (empty) |
 | Master Key | `SECRETS_MASTER_KEY` | (empty) |
 
-### New Package: `backend/swlib/secrets/`
+### New Package: `swlib/secrets/`
 
 ```go
 type Manager struct {
@@ -186,56 +169,14 @@ func (m *Manager) Get(key string) string {
 
 ### CLI Tool (`cmd/secrets-tool/`)
 ```bash
-# Generate master key
 secrets-tool generate-key
-
-# Encrypt secrets file
 secrets-tool encrypt secrets.json plaintext.json
-
-# Decrypt secrets file
 secrets-tool decrypt plaintext.json secrets.json
 ```
 
 ---
 
-## File Structure
-
-```
-backend/
-├── swlib/
-│   ├── totp/
-│   │   ├── totp.go
-│   │   ├── qr.go
-│   │   └── totp_test.go
-│   └── secrets/
-│       ├── secrets.go
-│       └── secrets_test.go
-├── services/authservice/
-│   ├── cmd/
-│   │   ├── authservice/main.go (modified)
-│   │   └── secrets-tool/main.go (new)
-│   ├── internal/
-│   │   ├── db/
-│   │   │   ├── mfa.go (new)
-│   │   │   └── sessions.go (new)
-│   │   ├── model/
-│   │   │   ├── mfa.go (new)
-│   │   │   └── session.go (new)
-│   │   └── server/
-│   │       ├── mfa.go (new)
-│   │       ├── sessions.go (new)
-│   │       ├── login.go (modified)
-│   │       ├── registration.go (modified)
-│   │       └── password_reset.go (modified)
-│   └── migrations/
-│       ├── 0001_012_mfa.sql (new)
-│       └── 0001_013_sessions.sql (new)
-└── protos/auth/v1/auth.proto (modified)
-```
-
----
-
-## Environment Variables
+## Environment Variables (pending items only)
 
 ```bash
 # MFA
@@ -257,27 +198,7 @@ SECRETS_MASTER_KEY=
 
 ---
 
-## Rollout Plan
-
-### Week 5-6: MFA
-- TOTP library and tests
-- MFA endpoints
-- Backup codes
-- Login flow integration
-
-### Week 7: Session Management
-- Session CRUD
-- Idle timeout
-- Concurrent limits
-
-### Week 8: Enumeration & Secrets
-- User enumeration protection
-- Secrets management
-- Integration testing
-
----
-
-## Testing Strategy
+## Testing Strategy (pending items only)
 
 ### Unit Tests
 - TOTP code generation and validation

@@ -2,7 +2,9 @@
 
 ## Executive Summary
 
-Analysis of the current authservice implementation with identified security gaps and improvement recommendations.
+Security analysis of `authservice`, tracking what's implemented against a phased improvement plan. This doc predates a 2026-08 audit pass (`authservice/CODE_REVIEW_2026-08.md`) that independently found and fixed several of the same gaps — that file is the current, code-verified source of truth for recent fixes; this doc has been updated to match it and to correct stale figures, but treat `CODE_REVIEW_2026-08.md` as authoritative where the two disagree.
+
+**Status at a glance**: rate limiting, account lockout, JWT rotation, single-use hashed refresh tokens, and user-enumeration protection are implemented (though not always via the mechanism originally proposed here — see notes per section). Audit logging, JWT-key-at-rest encryption, configurable cookie `SameSite`, TLS enforcement, breach-password detection, password history, MFA, session management, secrets management, metrics, and service-client secret rotation are still pending — see `AuthImprovement/INDEX.md` for the phase-by-phase status table.
 
 ---
 
@@ -16,12 +18,15 @@ Analysis of the current authservice implementation with identified security gaps
 | Web Server | 8000 | Email verification/reset pages |
 
 ### Security Features
-- RS256 JWT signing with automatic key rotation
-- Argon2id password hashing (64MB memory, 1 iteration, 4 threads)
-- Single-use refresh tokens with IP/user-agent binding
+- RS256 JWT signing with automatic, advisory-lock-guarded key rotation
+- Argon2id password hashing (64 MiB memory, 3 iterations, 4 threads)
+- Single-use, SHA-256-hashed refresh tokens with atomic consume; IP/user-agent recorded as a soft signal, never a gate
+- Postgres-backed login rate limiting and progressive account lockout (`security_throttle` table)
+- General gRPC rate limiting (in-memory token bucket, `swlib/ratelimit`)
 - Service client authentication with OAuth2 client credentials
 - Endpoint-level security profiles (public, unverified, admin, service client)
 - Password entropy validation (minimum 80 bits)
+- Uniform responses across login/registration to prevent user enumeration
 
 ---
 
@@ -30,309 +35,168 @@ Analysis of the current authservice implementation with identified security gaps
 ### 1. Password Security
 
 **Strengths**
-- Argon2id hashing: Winner of Password Hashing Competition, resistant to GPU and side-channel attacks
-- Secure parameters: 64MB memory, 1 iteration, 4 threads - good balance
-- Constant-time comparison: Uses `subtle.ConstantTimeCompare` to prevent timing attacks
-- Password entropy validation: Minimum 80 bits entropy required
+- Argon2id hashing: winner of the Password Hashing Competition, resistant to GPU and side-channel attacks
+- Parameters: 64 MiB memory, 3 iterations, 4 threads (`swlib/crypto/hashing.go`)
+- Constant-time comparison via `subtle.ConstantTimeCompare`
+- Password entropy validation: minimum 80 bits required
 
-**Weaknesses**
-- No password history: Users can reuse previous passwords
-- No password expiration policy: Passwords never expire
-- No breached password detection: No check against known compromised passwords
+**Still pending**
+- No password history — users can reuse previous passwords (Phase 2)
+- No password expiration policy
+- No breached-password detection (Phase 2, HaveIBeenPwned)
 
 ---
 
 ### 2. JWT Token Security
 
 **Strengths**
-- RS256 signing: Asymmetric algorithm, public keys for verification
-- Automatic key rotation: New keys generated 3 days before expiration
-- Advisory locks: Prevents race conditions during key rotation
-- 2048-bit RSA: Minimum recommended key size
-- 30-day key validity: Regular rotation limits exposure window
+- RS256 signing, asymmetric, public keys for verification
+- Automatic key rotation with advisory locks to prevent race conditions (`authservice/internal/db/jwt_keys.go`)
+- 3072-bit RSA (`swlib/crypto/keypair.go`) — above the 2048-bit minimum
+- 30-day key validity, regular rotation limits exposure window
 
-**Weaknesses**
-- Private keys in database: RSA private keys stored in plaintext in PostgreSQL
-- No key encryption at rest: Database compromise exposes signing keys
-- Single key pair: Only one active signing key at a time (though old keys remain for verification)
+**Still pending**
+- Private keys stored in plaintext in PostgreSQL — no encryption at rest (Phase 1)
+- No usage tracking or rotation audit trail (Phase 4)
+- Single active signing key at a time (old keys remain for verification only)
 
 ---
 
 ### 3. Refresh Token Security
 
 **Strengths**
-- Single-use tokens: Old refresh token deleted before new one issued
-- Token binding: Bound to IP address and user agent
-- Hashed storage: Tokens stored as hashed values in database
-- 64-byte random tokens: Cryptographically secure generation
-- 30-day expiration: Reasonable lifetime for "remember me"
+- Single-use tokens: atomically consumed and replaced (`authservice/internal/db/refresh_tokens.go`)
+- SHA-256-hashed storage
+- 64-byte random tokens, cryptographically secure generation
+- 30-day expiration
+- IP/user-agent are recorded and used only as a soft signal — never a gate, since NAT/load-balanced clients legitimately share IPs and user agents are trivially spoofed
 
-**Weaknesses**
-- IP binding can break: Users behind NAT/load balancers share IPs
-- User agent spoofing: User agent easily forged by attackers
-- No token revocation list: Cannot revoke all tokens for a user (only one per user)
-- Token stored in cookie without SameSite=Strict: Vulnerable to CSRF
+**Still pending**
+- No token revocation list beyond single-use rotation
+- Cookie `SameSite` still hardcoded to `Lax`, not configurable to `Strict` (Phase 2)
 
 ---
 
 ### 4. Session Management
 
 **Strengths**
-- HttpOnly cookies: Prevents JavaScript access to refresh tokens
-- SameSite=Lax: Partial CSRF protection
-- Cookie namespacing: Prevents cookie collisions
+- HttpOnly cookies — prevents JavaScript access to refresh tokens
+- `SameSite=Lax` — partial CSRF protection
+- `Secure` flag now auto-derived from `X-Forwarded-Proto` (`authentication.go`, `CookieHeaderMatcher`) rather than defaulting to false
+- Cookie namespacing prevents collisions
 
-**Weaknesses**
-- Secure flag defaults to false: Cookies sent over HTTP unless explicitly configured
-- No session timeout: Only refresh token expiration (30 days)
-- No concurrent session control: Cannot limit sessions per user
-- Cookie value base64 encoded: Not encrypted, visible in transit over HTTP
+**Still pending**
+- `SameSite` not configurable (Phase 2)
+- No session timeout beyond refresh-token expiration (30 days) (Phase 3)
+- No concurrent session control or session listing/revocation (Phase 3)
 
 ---
 
 ### 5. Authentication Flow
 
 **Strengths**
-- Separate public/verified/admin endpoints: Fine-grained access control
-- Service client authentication: Separate OAuth2 client credentials flow
-- Scope-based authorization: Service clients have scoped permissions
+- Separate public/verified/admin endpoint profiles
+- Service client authentication via a distinct OAuth2 client-credentials flow, with scoped permissions
+- **Rate limiting and account lockout are implemented** — a Postgres `security_throttle` table with a sliding window tracks attempts per scope (login, email-send-by-IP, etc.) and applies progressive lockout; see `authservice/internal/db/throttle.go` and `authservice/internal/server/throttle.go`. This was originally scoped as a Phase 1 Redis-backed design (see `AUTH_IMPROVEMENTS_PHASE_01.md`) but shipped against Postgres instead — no new infra dependency required.
 
-**Weaknesses**
-- No rate limiting: Login attempts not throttled
-- No account lockout: No lockout after failed attempts
-- No MFA support: Single-factor authentication only
-- No login anomaly detection: No detection of unusual login patterns
+**Still pending**
+- No MFA support — single-factor authentication only (Phase 3)
+- No login anomaly detection
 
 ---
 
 ### 6. Email Verification
 
 **Strengths**
-- Token-based verification: 64-byte secure random tokens
-- Time-limited tokens: Tokens expire
-- Single-use tokens: One verification per token
+- Token-based verification: 64-byte secure random tokens, time-limited, single-use
+- Email send rate limiting per source IP (`ScopeEmailSendByIP` in the throttle system)
 
-**Weaknesses**
-- No email rate limiting: Could spam verification emails
-- Token in URL: Verification tokens visible in logs/browser history
-- No email validation: Only format validation, not deliverability
+**Still pending**
+- Token appears in URL — visible in logs/browser history
+- No email deliverability validation, only format validation
 
 ---
 
 ### 7. Password Reset
 
 **Strengths**
-- Token-based reset: Separate from verification tokens
-- Secure random tokens: 64-byte generation
-- Time-limited: Tokens expire
+- Token-based, separate from verification tokens; secure random generation; time-limited
+- Covered by the same rate-limiting/throttle system as login
 
-**Weaknesses**
-- No rate limiting: Could spam reset emails
-- No user enumeration protection: Different responses for valid/invalid emails
-- Token in URL: Reset tokens visible in logs
+**Fixed since this doc was first written**
+- User enumeration protection: responses are now uniform for valid/invalid emails (fixed 2026-08-17, see `authservice/CODE_REVIEW_2026-08.md`)
+
+**Still pending**
+- Token appears in URL — visible in logs
 
 ---
 
 ### 8. Service Client Security
 
 **Strengths**
-- Client credentials flow: Standard OAuth2 pattern
-- Scope-based access: Granular permission control
-- Hashed secrets: Client secrets stored as Argon2id hashes
-- Admin-only creation: Only admins can create service clients
+- Standard OAuth2 client-credentials flow
+- Scope-based access control
+- Hashed secrets (Argon2id)
+- Admin-only creation
 
-**Weaknesses**
-- No secret rotation policy: Secrets never expire
-- No audit logging: Service client usage not logged
-- No IP restrictions: Service clients can authenticate from any IP
+**Still pending**
+- No secret rotation policy — secrets never expire (Phase 4)
+- No audit logging of service client usage (Phase 1/4)
+- No IP restrictions per service client
 
 ---
 
 ### 9. Infrastructure Security
 
 **Strengths**
-- PostgreSQL advisory locks: Prevents race conditions
-- Database connection pooling: Standard sql.DB pooling
-- Graceful shutdown: Proper cleanup on termination
+- PostgreSQL advisory locks prevent race conditions during key rotation
+- Standard `sql.DB` connection pooling
+- Graceful shutdown
 
-**Weaknesses**
-- No TLS enforcement: Database connections can use `sslmode=disable`
-- No connection encryption: gRPC connections not encrypted by default
-- No secrets management: Passwords in environment variables
-- No health check authentication: Health endpoints publicly accessible
+**Still pending**
+- Database connections default to `sslmode=disable` (`authservice/internal/db/postgres.go`) (Phase 2)
+- No gRPC TLS enforcement (Phase 2)
+- No secrets manager — configuration via plain environment variables (Phase 3)
+- Health endpoints publicly accessible
 
 ---
 
 ### 10. Logging & Monitoring
 
 **Strengths**
-- Structured logging: Uses custom logger with function/component context
-- Debug logging for failures: Failed login attempts logged
-- No sensitive data in logs: Passwords/hashes not logged
+- Structured logging with function/component context
+- Failed login attempts logged
+- No sensitive data (passwords/hashes) in logs
 
-**Weaknesses**
-- No audit trail: No persistent log of auth events
-- No alerting: No alert on suspicious activity
-- No metrics: No performance/security metrics
+**Still pending**
+- No persistent audit trail of auth events (Phase 1)
+- No alerting on suspicious activity (Phase 4)
+- No Prometheus metrics (Phase 4)
 
 ---
 
 ## Vulnerability Summary
 
-| Category | Severity | Issue |
-|----------|----------|-------|
-| Authentication | HIGH | No rate limiting on login attempts |
-| Authentication | HIGH | No account lockout after failed attempts |
-| Session | MEDIUM | Refresh token cookie lacks SameSite=Strict |
-| Session | MEDIUM | Secure flag defaults to false |
-| JWT | HIGH | Private keys stored unencrypted in database |
-| Password | MEDIUM | No breached password detection |
-| Password | MEDIUM | No password history |
-| Service Clients | MEDIUM | No secret rotation policy |
-| Infrastructure | MEDIUM | Database can run without TLS |
-| Monitoring | HIGH | No audit logging |
-| Monitoring | MEDIUM | No anomaly detection |
-
----
-
-## Recommended Improvements
-
-### Priority 1: Critical Security
-
-#### 1.1 Rate Limiting
-- Add login attempt throttling (5 attempts per minute per IP)
-- Add email-based rate limiting for registration/reset flows
-- Implement exponential backoff for repeated failures
-
-#### 1.2 Account Lockout
-- Lock accounts after 5 failed login attempts
-- Implement progressive lockout (15 min, 1 hour, 24 hours)
-- Admin unlock capability
-- Email notification on lockout
-
-#### 1.3 Audit Logging
-- Log all authentication events (login, logout, token refresh, password change)
-- Log admin actions (user creation, account level changes)
-- Log service client authentication
-- Persist logs to database or external service
-- Retention policy (90 days minimum)
-
-#### 1.4 JWT Private Key Encryption
-- Encrypt private keys at rest using database-level encryption or application-level encryption
-- Use separate encryption key management (e.g., AWS KMS, HashiCorp Vault)
-- Key rotation for encryption keys
-
----
-
-### Priority 2: High Impact
-
-#### 2.1 Cookie Security
-- Set Secure flag based on HTTPS detection (already partially implemented)
-- Change SameSite from Lax to Strict for refresh token cookies
-- Consider encrypting cookie values (not just base64)
-
-#### 2.2 TLS Enforcement
-- Require TLS for database connections (`sslmode=require` minimum)
-- Enforce TLS for gRPC communication
-- Add TLS certificate validation
-
-#### 2.3 Password Breach Detection
-- Integrate with HaveIBeenPwned API (k-anonymity model)
-- Check during registration and password change
-- Warn users if password is compromised
-
-#### 2.4 Password History
-- Store last 5 password hashes
-- Prevent password reuse
-- Hash history with same Argon2id parameters
-
----
-
-### Priority 3: Enhanced Security
-
-#### 3.1 Multi-Factor Authentication
-- TOTP support (Google Authenticator, Authy)
-- Backup codes for account recovery
-- Optional per-user enablement
-- Admin enforcement option
-
-#### 3.2 Session Management
-- Add session timeout (configurable, default 15 minutes idle)
-- Limit concurrent sessions per user
-- Session listing and revocation for users
-- Admin session termination
-
-#### 3.3 User Enumeration Protection
-- Consistent response times for valid/invalid emails
-- Generic error messages ("If account exists, email sent")
-- Rate limit password reset requests
-
-#### 3.4 Secrets Management
-- Move secrets from environment variables to secrets manager
-- Rotate service client secrets automatically
-- Audit secret access
-
----
-
-### Priority 4: Operational
-
-#### 4.1 Monitoring & Alerting
-- Authentication metrics (success/failure rates, latency)
-- Anomaly detection (unusual login patterns)
-- Alerting on security events (mass failed logins, admin actions)
-- Dashboard for auth health
-
-#### 4.2 Key Rotation Improvements
-- Support multiple active signing keys
-- Graceful key rotation with overlap
-- Automated key rotation notifications
-
-#### 4.3 Service Client Improvements
-- Secret expiration policy (90 days)
-- IP allowlisting per service client
-- Scope expiration (time-limited permissions)
-- Usage quotas
+| Category | Severity | Issue | Status |
+|----------|----------|-------|--------|
+| JWT | HIGH | Private keys stored unencrypted in database | Pending (Phase 1) |
+| Monitoring | HIGH | No audit logging | Pending (Phase 1) |
+| Password | MEDIUM | No breached password detection | Pending (Phase 2) |
+| Password | MEDIUM | No password history | Pending (Phase 2) |
+| Session | MEDIUM | `SameSite` not configurable to `Strict` | Pending (Phase 2) |
+| Infrastructure | MEDIUM | Database can run without TLS | Pending (Phase 2) |
+| Service Clients | MEDIUM | No secret rotation policy | Pending (Phase 4) |
+| Monitoring | MEDIUM | No anomaly detection | Pending |
+| ~~Authentication~~ | ~~HIGH~~ | ~~No rate limiting on login attempts~~ | **Fixed** — Postgres `security_throttle` |
+| ~~Authentication~~ | ~~HIGH~~ | ~~No account lockout after failed attempts~~ | **Fixed** — same mechanism |
+| ~~Session~~ | ~~MEDIUM~~ | ~~Secure flag defaults to false~~ | **Fixed** — derived from `X-Forwarded-Proto` |
+| ~~Auth flow~~ | ~~MEDIUM~~ | ~~User enumeration via inconsistent responses~~ | **Fixed** 2026-08-17 |
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1: Critical Security (Week 1-2)
-- [ ] Rate limiting on login endpoint
-- [ ] Account lockout mechanism
-- [ ] Audit logging foundation
-- [ ] JWT private key encryption
-
-### Phase 2: High Impact (Week 3-4)
-- [ ] Cookie security hardening
-- [ ] TLS enforcement
-- [ ] Password breach detection
-- [ ] Password history
-
-### Phase 3: Enhanced Security (Week 5-8)
-- [ ] MFA support (TOTP)
-- [ ] Session management improvements
-- [ ] User enumeration protection
-- [ ] Secrets management
-
-### Phase 4: Operational (Week 9-10)
-- [ ] Monitoring and alerting
-- [ ] Key rotation improvements
-- [ ] Service client hardening
-
----
-
-## Keycloak Migration Alternative
-
-If implementing all improvements is not feasible, migrating to Keycloak provides:
-- Built-in rate limiting and brute force protection
-- MFA support (TOTP, WebAuthn, SMS)
-- Audit logging
-- Admin UI
-- Social login
-- OIDC/OAuth2 compliance
-
-See `KEYCLOAK_MIGRATION_ANALYSIS.md` in the `swayrider-keycloak` worktree for detailed comparison.
+See `AuthImprovement/INDEX.md` for the current phase-by-phase status. Phase docs (`AUTH_IMPROVEMENTS_PHASE_01.md` … `_04.md`) retain full design detail only for items still pending; implemented items are trimmed to a status note and code pointer.
 
 ---
 
@@ -340,11 +204,12 @@ See `KEYCLOAK_MIGRATION_ANALYSIS.md` in the `swayrider-keycloak` worktree for de
 
 | Component | File |
 |-----------|------|
-| Password hashing | `backend/swlib/crypto/hashing.go` |
-| JWT generation | `backend/swlib/jwt/jwt.go` |
-| Refresh tokens | `backend/services/authservice/internal/model/refresh_token.go` |
-| Cookie handling | `backend/swlib/http/cookies/cookie.go` |
-| Auth interceptor | `backend/swlib/grpc/interceptors/authinterceptor.go` |
-| Endpoint security | `backend/swlib/security/endpoint_profile.go` |
-| Login flow | `backend/services/authservice/internal/server/authentication.go` |
-| Key rotation | `backend/services/authservice/internal/db/jwt_keys.go` |
+| Password hashing | `swlib/crypto/hashing.go` |
+| JWT key generation & rotation | `authservice/internal/db/jwt_keys.go`, `swlib/crypto/keypair.go` |
+| Refresh tokens | `authservice/internal/db/refresh_tokens.go`, `authservice/internal/model/refresh_token.go` |
+| Login rate limiting / lockout | `authservice/internal/db/throttle.go`, `authservice/internal/server/throttle.go` |
+| General gRPC rate limiting | `swlib/ratelimit/limiter.go`, `swlib/http/middlewares/ratelimit.go` |
+| Cookie handling | `swlib/http/cookies/cookie.go` |
+| Database connection / TLS | `authservice/internal/db/postgres.go` |
+| Login flow | `authservice/internal/server/authentication.go` |
+| Prior audit findings | `authservice/CODE_REVIEW_2026-08.md` |
