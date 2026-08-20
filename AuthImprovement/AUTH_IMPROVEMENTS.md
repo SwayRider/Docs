@@ -4,7 +4,7 @@
 
 Security analysis of `authservice`, tracking what's implemented against a phased improvement plan. This doc predates a 2026-08 audit pass (`authservice/CODE_REVIEW_2026-08.md`) that independently found and fixed several of the same gaps — that file is the current, code-verified source of truth for recent fixes; this doc has been updated to match it and to correct stale figures, but treat `CODE_REVIEW_2026-08.md` as authoritative where the two disagree.
 
-**Status at a glance**: rate limiting, account lockout, JWT rotation, single-use hashed refresh tokens, and user-enumeration protection are implemented (though not always via the mechanism originally proposed here — see notes per section). Audit logging, JWT-key-at-rest encryption, configurable cookie `SameSite`, TLS enforcement, breach-password detection, password history, MFA, session management, secrets management, metrics, and service-client secret rotation are still pending — see `AuthImprovement/INDEX.md` for the phase-by-phase status table.
+**Status at a glance**: rate limiting, account lockout, JWT rotation, single-use hashed refresh tokens, and user-enumeration protection are implemented (though not always via the mechanism originally proposed here — see notes per section). Audit logging, JWT-key-at-rest encryption, TLS enforcement, breach-password detection, password history, MFA, session management, secrets management, metrics, and service-client secret rotation are still pending — see `AuthImprovement/INDEX.md` for the phase-by-phase status table.
 
 ---
 
@@ -73,7 +73,6 @@ Security analysis of `authservice`, tracking what's implemented against a phased
 
 **Still pending**
 - No token revocation list beyond single-use rotation
-- Cookie `SameSite` still hardcoded to `Lax`, not configurable to `Strict` (Phase 2)
 
 ---
 
@@ -81,12 +80,11 @@ Security analysis of `authservice`, tracking what's implemented against a phased
 
 **Strengths**
 - HttpOnly cookies — prevents JavaScript access to refresh tokens
-- `SameSite=Lax` — partial CSRF protection
+- Configurable `SameSite` (default `Strict`) — CSRF protection
 - `Secure` flag now auto-derived from `X-Forwarded-Proto` (`authentication.go`, `CookieHeaderMatcher`) rather than defaulting to false
 - Cookie namespacing prevents collisions
 
 **Still pending**
-- `SameSite` not configurable (Phase 2)
 - No session timeout beyond refresh-token expiration (30 days) (Phase 3)
 - No concurrent session control or session listing/revocation (Phase 3)
 
@@ -183,7 +181,7 @@ Security analysis of `authservice`, tracking what's implemented against a phased
 | Monitoring | HIGH | No audit logging | Pending (Phase 1) |
 | Password | MEDIUM | No breached password detection | Pending (Phase 2) |
 | Password | MEDIUM | No password history | Pending (Phase 2) |
-| Session | MEDIUM | `SameSite` not configurable to `Strict` | Pending (Phase 2) |
+| ~~Session~~ | ~~MEDIUM~~ | ~~`SameSite` not configurable to `Strict`~~ | **Fixed** — configurable via `COOKIE_SAMESITE`, default `Strict` |
 | Infrastructure | MEDIUM | Database can run without TLS | Pending (Phase 2) |
 | Service Clients | MEDIUM | No secret rotation policy | Pending (Phase 4) |
 | Monitoring | MEDIUM | No anomaly detection | Pending |
