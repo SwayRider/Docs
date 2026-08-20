@@ -5,7 +5,7 @@
 - **Rate limiting** on login attempts — ✅ **DONE**, implemented differently than originally scoped here (see below)
 - **Account lockout** after failed attempts — ✅ **DONE**, same mechanism as rate limiting
 - **Audit logging** for authentication events — ✅ **DONE**, implemented differently than originally scoped here (see below)
-- **JWT private key encryption** at rest — ⏳ **PENDING**
+- **JWT private key encryption** at rest — ✅ **DONE**, implemented differently than originally scoped here (see below)
 
 ---
 
@@ -71,24 +71,57 @@ Migration: `authservice/migrations/0001_012_create_audit_log_table.sql`
 
 ---
 
-## 4. JWT Private Key Encryption — ⏳ PENDING
+## 4. JWT Private Key Encryption — ✅ DONE (boolean discriminator + key ring, not the 3-column sketch)
 
-### Approach: AES-256-GCM with env var master key
+Shipped with deliberate deviations from the original scoping above:
 
-### Database Migration
-```sql
-ALTER TABLE jwt_keys ADD COLUMN encryption_key_id TEXT;
-ALTER TABLE jwt_keys ADD COLUMN encryption_iv TEXT;
-ALTER TABLE jwt_keys ADD COLUMN encryption_tag TEXT;
-```
-
-### Implementation
-- New package: `swlib/encryption/`
-- Master key: `ENCRYPTION_MASTER_KEY` (base64-encoded 256-bit)
-- Generate key: `openssl rand -base64 32`
-- Encrypt before storing, decrypt in-memory only for signing
-- Supports gradual migration (existing keys remain readable)
-- Touches `authservice/internal/db/jwt_keys.go`, where private keys are currently read/written in plaintext
+- **Schema differs from the original 3-column sketch.** Instead of separate
+  `encryption_iv`/`encryption_tag` columns, `jwt_keys.private_key` is reused
+  directly: for encrypted rows it holds `base64(nonce || ciphertext || tag)`,
+  exactly what Go's `cipher.AEAD.Seal` produces in one call — no separate
+  IV/tag marshaling needed. Two columns were added instead of three:
+  `private_key_encrypted BOOLEAN NOT NULL DEFAULT FALSE` (explicit
+  discriminator; existing rows default to `FALSE`, which is what makes
+  "gradual migration, old keys stay readable" free with no backfill
+  statement) and `encryption_key_id TEXT` (nullable — a **fingerprint** of
+  the master key, `SHA-256(masterKey)` truncated, never the key itself).
+  Migration: `authservice/migrations/0001_013_encrypt_jwt_private_key.sql`.
+- **`swlib/encryption/`** (`encryption.go`, `keyring.go`) ships `Encrypt`/
+  `Decrypt`/`ParseMasterKey`/`Fingerprint` plus a `KeyRing` type — see master
+  key rotation below. `authservice/internal/db/jwt_keys.go` gained
+  `encodeForStorage`/`decodeFromStorage` helpers used by `createNewKeyPair`
+  (encrypts before `INSERT`) and `GetSigningKey` (decrypts after `SELECT`,
+  passing through unchanged when `private_key_encrypted = FALSE`).
+- **No forced backfill.** The row that was plaintext at deploy time stays
+  plaintext-readable until it naturally rotates out (`keysNeedRotation`
+  already runs hourly, replacing keys ~3 days before their 30-day expiry —
+  the replacement is encrypted automatically since `createNewKeyPair` always
+  encrypts going forward). An operator runbook (bump `valid_until` to force
+  early rotation) covers accelerating this after deploy.
+- **Master key rotation, not in the original doc at all.** `ENCRYPTION_MASTER_KEY`
+  is the required "current" key (mandatory, fail-fast at startup if unset/
+  invalid — a silent plaintext fallback would defeat the feature). An
+  optional `ENCRYPTION_MASTER_KEY_PREVIOUS` (comma-separated) holds retired
+  keys, used only to decrypt rows still encrypted under an older key.
+  `swlib/encryption.KeyRing` looks up the right key by a row's
+  `encryption_key_id` fingerprint. Rotation is restart-activated (config is
+  read at startup only) and bounded: a retired key only needs to stay
+  configured until every currently-valid row has rotated onto the new one
+  (~30-day key lifetime), confirmed via `SELECT DISTINCT encryption_key_id
+  FROM jwt_keys WHERE valid_until > now();`, after which it's dropped.
+- **Expired `jwt_keys` rows are now cleaned up, which they never were
+  before.** `cleanupExpiredJwtKeys` (`internal/db/jwt_keys.go`), wired into
+  the existing hourly `DoDatabaseMaintenance` alongside `cleanupAuditLog`/
+  `cleanupSecurityThrottle`, deletes rows expired more than
+  `JWT_KEY_RETENTION_DAYS` (default 7) ago — a small forensics/clock-skew
+  margin, not the key's full 30-day lifetime. Safe by construction: both
+  `GetSigningKey` and `GetVerificationKeys` already filter
+  `valid_until > now()`, so a row past retention was already unreachable;
+  deletion only reclaims storage and shrinks how much historical encrypted
+  key material sits in the database.
+- A decrypt failure (wrong/rotated master key, corrupted data) fails only
+  the specific signing call — the service, health checks, and verification
+  of already-issued tokens keep running.
 
 ---
 
@@ -99,6 +132,8 @@ ALTER TABLE jwt_keys ADD COLUMN encryption_tag TEXT;
 AUDIT_RETENTION_DAYS=90    # default 90
 AUDIT_BUFFER_SIZE=1000     # default 1000; async writer channel buffer
 
-# Encryption (pending)
-ENCRYPTION_MASTER_KEY=<base64-256-bit>
+# Encryption (shipped)
+ENCRYPTION_MASTER_KEY=<base64-256-bit>            # required; openssl rand -base64 32
+ENCRYPTION_MASTER_KEY_PREVIOUS=<key1>,<key2>,...  # optional; retired keys, for rotation
+JWT_KEY_RETENTION_DAYS=7                          # default 7; expired jwt_keys row cleanup
 ```
