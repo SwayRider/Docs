@@ -2,7 +2,7 @@
 
 ## Overview
 
-- **Cookie security hardening** — 🟡 **PARTIAL**: `Secure` flag done, `SameSite` configurability still pending
+- **Cookie security hardening** — ✅ **DONE**: `Secure` flag auto-derived, `SameSite` configurable
 - **TLS enforcement** — ⏳ **PENDING**
 - **Password breach detection** — ⏳ **PENDING**
 - **Password history** — ⏳ **PENDING**
@@ -15,36 +15,18 @@
 
 Rather than a manual `COOKIE_SECURE` toggle, the `Secure` flag is now derived automatically from the `X-Forwarded-Proto` header (`authservice/internal/server/authentication.go`, `CookieHeaderMatcher`). No further work needed here.
 
-### `SameSite` configurability — ⏳ PENDING
+### `SameSite` configurability — ✅ DONE
 
-`swlib/http/cookies/cookie.go` still hardcodes `http.SameSiteLaxMode`. `CookieOpts` has a `SetSameSite` method, but nothing in `authservice` calls it — refresh-token cookies always get `Lax`.
+`COOKIE_SAMESITE` (env-only, default `strict`) now controls the refresh-token cookie's `SameSite` policy. Shipped with deliberate deviations from the original sketch:
 
-### Configuration (target)
-| Parameter | Env Variable | Default |
-|-----------|--------------|---------|
-| SameSite Mode | `COOKIE_SAMESITE` | strict |
-| Cookie Encryption | `COOKIE_ENCRYPTION_KEY` | (empty) |
+- **Setter + parser in `swlib/http/cookies/cookie.go`, not env-reading in a constructor.** The package gained a package-level `defaultSameSite` (initialized to `Lax`), an exported `SetDefaultSameSite(http.SameSite)`, and an exported `ParseSameSite(string) (http.SameSite, error)`. `NewServerCookie`/`ClearCookie` now fall back to `defaultSameSite` instead of the hardcoded `SameSiteLaxMode` literal, so an explicit `CookieOpts.SetSameSite` still wins (which is why `swayrider-api`'s hardcoded `Strict` cookies are unaffected). This mirrors the existing `SetNamespace`/`COOKIE_NAMESPACE` pattern rather than reading process env inside the library.
+- **Wired in `authservice/cmd/authservice/main.go`** next to the `COOKIE_NAMESPACE` block: `ParseSameSite(os.Getenv("COOKIE_SAMESITE"))`, warn on invalid, then `SetDefaultSameSite`. Unset → `strict`.
+- **`none` deliberately rejected.** `SameSite=None` requires the `Secure` flag, which is derived per-request from `X-Forwarded-Proto` and can't be guaranteed, so a `none` cookie could be silently dropped by browsers. `ParseSameSite` accepts only `strict`/`lax` (case-insensitive) and returns an error for anything else; the caller logs and falls back to `strict`.
+- **Default is `strict`, not `Lax`.** This is the intended hardening: the refresh cookie is only used in same-site fetch/XHR calls, so the stricter policy doesn't break login/refresh/logout (email verification and password reset use URL tokens, not this cookie).
 
-### Implementation
+Tests: `swlib/http/cookies/cookie_test.go` (`TestParseSameSite`, `TestSetDefaultSameSite`).
 
-**Modify**: `swlib/http/cookies/cookie.go` to read `COOKIE_SAMESITE` and call the existing `SetSameSite`:
-
-```go
-func parseSameSite(s string) http.SameSite {
-    switch strings.ToLower(s) {
-    case "strict":
-        return http.SameSiteStrictMode
-    case "lax":
-        return http.SameSiteLaxMode
-    case "none":
-        return http.SameSiteNoneMode
-    default:
-        return http.SameSiteStrictMode // Default to strict
-    }
-}
-```
-
-Optional AES-256 cookie-value encryption remains a stretch goal, not required for the `SameSite` fix.
+Optional AES-256 cookie-value encryption (`COOKIE_ENCRYPTION_KEY`) remains a stretch goal, not required for the `SameSite` fix.
 
 ---
 
@@ -182,7 +164,6 @@ func (d *DB) CheckPasswordReuse(ctx context.Context, userID, newPassword string)
 
 ```bash
 # Cookie Security
-COOKIE_SAMESITE=strict
 COOKIE_ENCRYPTION_KEY=
 
 # TLS
@@ -206,7 +187,6 @@ PASSWORD_HISTORY_SIZE=5
 ## Testing Strategy (pending items only)
 
 ### Unit Tests
-- `SameSite` configuration parsing
 - HIBP client k-anonymity implementation
 - Password history CRUD operations
 
@@ -216,7 +196,6 @@ PASSWORD_HISTORY_SIZE=5
 - Password reuse detection
 
 ### Manual Testing
-- Verify `SameSite` with browser dev tools
 - Test TLS with `openssl s_client`
 - Test breached password rejection
 - Test password history enforcement
