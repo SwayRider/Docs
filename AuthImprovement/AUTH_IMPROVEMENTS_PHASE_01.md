@@ -4,7 +4,7 @@
 
 - **Rate limiting** on login attempts — ✅ **DONE**, implemented differently than originally scoped here (see below)
 - **Account lockout** after failed attempts — ✅ **DONE**, same mechanism as rate limiting
-- **Audit logging** for authentication events — ⏳ **PENDING**
+- **Audit logging** for authentication events — ✅ **DONE**, implemented differently than originally scoped here (see below)
 - **JWT private key encryption** at rest — ⏳ **PENDING**
 
 ---
@@ -28,38 +28,46 @@ Progressive lockout is implemented via the same `security_throttle` sliding-wind
 
 ---
 
-## 3. Audit Logging — ⏳ PENDING
+## 3. Audit Logging — ✅ DONE (`internal/db`/`internal/server`, not a standalone package)
 
-### Database Migration (`0001_XXX_audit_log.sql`)
-```sql
-CREATE TABLE audit_log (
-    id BIGSERIAL PRIMARY KEY,
-    event_type TEXT NOT NULL,
-    user_id UUID REFERENCES users(id),
-    email TEXT,
-    ip_address TEXT,
-    user_agent TEXT,
-    metadata JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-Migration numbers must be chosen against the actual current sequence in `authservice/migrations/` at implementation time — it has moved past `0001_011` since this doc was written.
+Shipped with three deliberate deviations from the original scoping above:
 
-### Event Types
-- `auth.login.success/failure`
+- **No standalone `internal/audit/` package.** Follows the same
+  writer-on-`*DB` + thin-wrapper-on-`*AuthServer` split already used for
+  `security_throttle` (`internal/db/throttle.go` + `internal/server/throttle.go`):
+  `internal/db/audit.go` (`AuditEvent`, `InsertAuditEvent`, `cleanupAuditLog`)
+  and `internal/server/audit.go` (`AuditWriter`, per-event-type emit helpers).
+- **Real async writer**, not fire-and-forget-synchronous: `AuditWriter` wraps
+  a buffered channel (size via `AUDIT_BUFFER_SIZE`, default 1000); handlers
+  call a non-blocking `emit` that drops (and logs) on a full buffer rather
+  than blocking the request. `cmd/authservice/main.go`'s `auditFlusher`
+  background routine drains the channel to the database, with a bounded
+  drain of any remaining buffered events on shutdown.
+- **Retention cleanup folded into the existing hourly `dbMaintenance`**
+  routine (`cleanupAuditLog`, alongside `cleanupSecurityThrottle`) rather
+  than a separate daily ticker — `AUDIT_RETENTION_DAYS` (default 90) is
+  threaded through `DoDatabaseMaintenance`.
+- **`auth.account_unlocked` was dropped from the event list.** Lockout is
+  purely a `locked_until` timestamp that expires on its own; there's no code
+  path that ever executes "unlock," so emitting a synthetic unlock event
+  would misrepresent what happened. `auth.account_locked` fires at the real
+  transition point instead — see `RecordAttemptResult`'s `locked` return
+  value in `internal/db/throttle.go`, consumed by
+  `internal/server/throttle.go`'s `recordLoginAttempt`/`recordClientAttempt`.
+
+Migration: `authservice/migrations/0001_012_create_audit_log_table.sql`
+(`audit_log` table + indexes on `created_at`, `event_type`, `user_id`).
+
+### Event Types (as shipped)
+- `auth.login.success` / `auth.login.failure`
 - `auth.logout`
-- `auth.refresh.success/failure`
+- `auth.refresh.success` / `auth.refresh.failure`
 - `auth.register`
 - `auth.verify_email`
-- `auth.password_change/reset`
-- `auth.account_locked/unlocked`
+- `auth.password_change` / `auth.password_reset`
+- `auth.account_locked`
 - `auth.service_client.auth`
-- `auth.admin.create/change_account`
-
-### Implementation
-- New package: `authservice/internal/audit/`
-- Async logging option for performance
-- 90-day retention with daily cleanup routine
+- `auth.admin.create` / `auth.admin.change_account`
 
 ---
 
@@ -84,13 +92,13 @@ ALTER TABLE jwt_keys ADD COLUMN encryption_tag TEXT;
 
 ---
 
-## Environment Variables (pending items only)
+## Environment Variables
 
 ```bash
-# Audit
-AUDIT_RETENTION_DAYS=90
-AUDIT_ASYNC=true
+# Audit (shipped)
+AUDIT_RETENTION_DAYS=90    # default 90
+AUDIT_BUFFER_SIZE=1000     # default 1000; async writer channel buffer
 
-# Encryption
+# Encryption (pending)
 ENCRYPTION_MASTER_KEY=<base64-256-bit>
 ```
