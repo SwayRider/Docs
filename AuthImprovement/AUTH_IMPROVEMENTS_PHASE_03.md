@@ -2,16 +2,16 @@
 
 ## Overview
 
-- **Multi-Factor Authentication (MFA)** — 🔨 **IN PROGRESS** (implementation plans 1–3 done: TOTP core + db, authservice endpoints, gateway + authclient; plans 4–5 Flutter pending)
+- **Multi-Factor Authentication (MFA)** — ✅ **DONE** (all five implementation plans complete: TOTP core + db, authservice endpoints, gateway + authclient, Flutter data + login, Flutter UI)
 - **Session management** — ⏳ **PENDING**
 - **User enumeration protection** — ✅ **DONE** (fixed 2026-08-17, see below)
 - **Secrets management** — ⏳ **PENDING**
 
 ---
 
-## 1. Multi-Factor Authentication (TOTP) — 🔨 IN PROGRESS (implementation plans agreed 2026-08-21)
+## 1. Multi-Factor Authentication (TOTP) — ✅ DONE (all five implementation plans complete, 2026-08-21)
 
-> **Status:** implementation is split into five sequential plans under [`Docs/AuthImprovement/multifactor/`](multifactor/INDEX.md) (TOTP core + db → authservice endpoints → gateway/client → Flutter data + login → Flutter UI). Key decisions that deviate from or refine the sketch below: **manual base32 key is the primary enrollment path** (a phone cannot scan its own screen, so QR is secondary, server-rendered, for second-device enrollment); the **MFA challenge token is DB-backed** (SHA-256-hashed, TTL + attempt counter — mirrors reset tokens) rather than a bare short-lived token; the **TOTP secret is encrypted at rest** with `ENCRYPTION_MASTER_KEY` (like the JWT key) instead of plain `TEXT`; a **new `mfa` throttle scope** bounds TOTP guessing (login lockout alone doesn't — a phishing attacker can loop successful password logins); `MFA_ENABLED=false` fails closed on management endpoints and bypasses the login step.
+> **Status:** implemented across five sequential plans under [`Docs/AuthImprovement/multifactor/`](multifactor/INDEX.md) (TOTP core + db → authservice endpoints → gateway/client → Flutter data + login → Flutter UI) — server, gateway, and app all landed; the Flutter app can enroll (manual key + QR), log in with TOTP or a backup code, and disable/regenerate from the profile. Key decisions that deviate from or refine the sketch below: **manual base32 key is the primary enrollment path** (a phone cannot scan its own screen, so QR is secondary, server-rendered, for second-device enrollment); the **MFA challenge token is DB-backed** (SHA-256-hashed, TTL + attempt counter — mirrors reset tokens) rather than a bare short-lived token; the **TOTP secret is encrypted at rest** with `ENCRYPTION_MASTER_KEY` (like the JWT key) instead of plain `TEXT`; a **new `mfa` throttle scope** bounds TOTP guessing (login lockout alone doesn't — a phishing attacker can loop successful password logins); `MFA_ENABLED=false` fails closed on management endpoints and bypasses the login step.
 
 ### How TOTP Works
 

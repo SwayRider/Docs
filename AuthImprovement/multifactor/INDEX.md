@@ -1,5 +1,7 @@
 # Multi-Factor Authentication — Implementation Plans
 
+> **Status: all five plans implemented (2026-08-21).** TOTP core + db (1), authservice endpoints + login flow (2), gateway + authclient (3), Flutter API/repository/login step (4), and Flutter management UI (5) are complete end-to-end.
+
 Sequential implementation plans for [AUTH_IMPROVEMENTS_PHASE_03 §1](../AUTH_IMPROVEMENTS_PHASE_03.md) (TOTP MFA).
 
 The feature spans five layers, each an independently committable unit. Implement strictly in order — each plan builds on the previous one's schema/contracts, and Plan 3 breaks the `authclient.Login` signature (all consumers must move in the same step).

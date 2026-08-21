@@ -7,8 +7,8 @@ Security hardening plan for `authservice`. `AUTH_IMPROVEMENTS.md` is the full an
 | [AUTH_IMPROVEMENTS](./AUTH_IMPROVEMENTS.md) | Security Analysis & Vulnerability Summary | Living doc |
 | [AUTH_IMPROVEMENTS_PHASE_01](./AUTH_IMPROVEMENTS_PHASE_01.md) | Critical Security | Done — rate limiting, lockout, audit logging & JWT key encryption at rest all done |
 | [AUTH_IMPROVEMENTS_PHASE_02](./AUTH_IMPROVEMENTS_PHASE_02.md) | High Impact | Partially Done — cookie `Secure`/`SameSite`, HIBP breach detection and password history done; TLS deferred (to do later) |
-| [AUTH_IMPROVEMENTS_PHASE_03](./AUTH_IMPROVEMENTS_PHASE_03.md) | Enhanced Security | Partially Done — user enumeration protection done; MFA designed (see [multifactor plans](./multifactor/INDEX.md)), sessions & secrets management pending |
-| [multifactor/](./multifactor/INDEX.md) | MFA implementation plans | Planned — 5 sequential plans (TOTP core+db → authservice endpoints → gateway/client → Flutter data+login → Flutter UI), agreed 2026-08-21 |
+| [AUTH_IMPROVEMENTS_PHASE_03](./AUTH_IMPROVEMENTS_PHASE_03.md) | Enhanced Security | Partially Done — user enumeration protection and MFA (all 5 plans) done; sessions & secrets management pending |
+| [multifactor/](./multifactor/INDEX.md) | MFA implementation plans | Implemented — all 5 plans complete (TOTP core+db → authservice endpoints → gateway/client → Flutter data+login → Flutter UI), 2026-08-21 |
 | [AUTH_IMPROVEMENTS_PHASE_04](./AUTH_IMPROVEMENTS_PHASE_04.md) | Operational | Pending — metrics, key rotation audit trail, service-client hardening |
 
 ## Already implemented (not originally scoped this way)
