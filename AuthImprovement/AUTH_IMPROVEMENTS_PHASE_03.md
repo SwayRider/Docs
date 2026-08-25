@@ -2,14 +2,16 @@
 
 ## Overview
 
-- **Multi-Factor Authentication (MFA)** — ⏳ **PENDING**
+- **Multi-Factor Authentication (MFA)** — ✅ **DONE** (all five implementation plans complete: TOTP core + db, authservice endpoints, gateway + authclient, Flutter data + login, Flutter UI)
 - **Session management** — ⏳ **PENDING**
 - **User enumeration protection** — ✅ **DONE** (fixed 2026-08-17, see below)
 - **Secrets management** — ⏳ **PENDING**
 
 ---
 
-## 1. Multi-Factor Authentication (TOTP) — ⏳ PENDING
+## 1. Multi-Factor Authentication (TOTP) — ✅ DONE (all five implementation plans complete, 2026-08-21)
+
+> **Status:** implemented across five sequential plans under [`Docs/AuthImprovement/multifactor/`](multifactor/INDEX.md) (TOTP core + db → authservice endpoints → gateway/client → Flutter data + login → Flutter UI) — server, gateway, and app all landed; the Flutter app can enroll (manual key + QR), log in with TOTP or a backup code, and disable/regenerate from the profile. Key decisions that deviate from or refine the sketch below: **manual base32 key is the primary enrollment path** (a phone cannot scan its own screen, so QR is secondary, server-rendered, for second-device enrollment); the **MFA challenge token is DB-backed** (SHA-256-hashed, TTL + attempt counter — mirrors reset tokens) rather than a bare short-lived token; the **TOTP secret is encrypted at rest** with `ENCRYPTION_MASTER_KEY` (like the JWT key) instead of plain `TEXT`; a **new `mfa` throttle scope** bounds TOTP guessing (login lockout alone doesn't — a phishing attacker can loop successful password logins); `MFA_ENABLED=false` fails closed on management endpoints and bypasses the login step.
 
 ### How TOTP Works
 
@@ -136,6 +138,8 @@ CREATE TABLE user_sessions (
 ## 3. User Enumeration Protection — ✅ DONE
 
 Fixed 2026-08-17 (see `authservice/CODE_REVIEW_2026-08.md`): login, registration, and password-reset flows now return uniform responses regardless of whether the email/account exists. No further work needed here; the original plan's "add random delay" and "minimum processing time" refinements remain optional hardening, not required.
+
+**2026-08-24 exception:** invite-only registration's rejection (`Register` in invite-only mode, non-invited email) deliberately reverted to a distinct `codes.PermissionDenied` rather than the uniform response — an owner-approved tradeoff so the mobile app can show an "invitation required" message, accepted because the invite pool is small, invited users register quickly, and completing registration for an invited email requires mailbox access regardless of whether invite status is known. Scoped to this one branch only: duplicate-email uniform-response protection in `Register`, and the `InviteUser`/`GetToken` fixes, are unaffected. See `CLAUDE.md` and `authservice/review/CODE_REVIEW_2026-08.md` finding #10.
 
 ---
 
