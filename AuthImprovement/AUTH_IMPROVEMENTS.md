@@ -122,7 +122,7 @@ Security analysis of `authservice`, tracking what's implemented against a phased
 - Covered by the same rate-limiting/throttle system as login
 
 **Fixed since this doc was first written**
-- User enumeration protection: responses are now uniform for valid/invalid emails (fixed 2026-08-17, see `authservice/CODE_REVIEW_2026-08.md`)
+- User enumeration protection: responses are now uniform for valid/invalid emails (fixed 2026-08-17, see `authservice/CODE_REVIEW_2026-08.md`). Exception: `Register`'s invite-only rejection deliberately reverted to a distinct `PermissionDenied` on 2026-08-24 (owner-approved, scoped to invite status only — duplicate-email uniform response unaffected).
 
 **Still pending**
 - Token appears in URL — visible in logs

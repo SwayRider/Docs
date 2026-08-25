@@ -139,6 +139,8 @@ CREATE TABLE user_sessions (
 
 Fixed 2026-08-17 (see `authservice/CODE_REVIEW_2026-08.md`): login, registration, and password-reset flows now return uniform responses regardless of whether the email/account exists. No further work needed here; the original plan's "add random delay" and "minimum processing time" refinements remain optional hardening, not required.
 
+**2026-08-24 exception:** invite-only registration's rejection (`Register` in invite-only mode, non-invited email) deliberately reverted to a distinct `codes.PermissionDenied` rather than the uniform response — an owner-approved tradeoff so the mobile app can show an "invitation required" message, accepted because the invite pool is small, invited users register quickly, and completing registration for an invited email requires mailbox access regardless of whether invite status is known. Scoped to this one branch only: duplicate-email uniform-response protection in `Register`, and the `InviteUser`/`GetToken` fixes, are unaffected. See `CLAUDE.md` and `authservice/review/CODE_REVIEW_2026-08.md` finding #10.
+
 ---
 
 ## 4. Secrets Management — ⏳ PENDING

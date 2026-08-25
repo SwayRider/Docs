@@ -19,7 +19,7 @@ Security hardening plan for `authservice`. `AUTH_IMPROVEMENTS.md` is the full an
 - Single-use, SHA-256-hashed refresh tokens with atomic consume; IP/user-agent used only as a soft signal.
 - Cookie `Secure` flag auto-derived from `X-Forwarded-Proto`.
 - Cookie `SameSite` configurable via `COOKIE_SAMESITE` (default `strict`).
-- User enumeration protection (uniform responses), fixed 2026-08-17.
+- User enumeration protection (uniform responses), fixed 2026-08-17. Invite-status carve-out: `Register`'s invite-only rejection deliberately reverted to a distinct `PermissionDenied` on 2026-08-24 (owner-approved, scoped exception — see `authservice/review/CODE_REVIEW_2026-08.md` finding #10); duplicate-email uniform-response protection is unaffected.
 - Password breach detection against the Pwned Passwords API (k-anonymity range protocol, fail-open), fixed 2026-08-20.
 - Password history enforcement (recent-password reuse prevention, `password_history` table, fail-open), fixed 2026-08-20.
 - Audit events for breached-password and reused-password rejections (`auth.password_breached_rejected`, `auth.password_reuse_rejected`), fixed 2026-08-20.
