@@ -26,6 +26,8 @@ Android app (Kotlin, Jetpack Compose, Clean Architecture) displays vector map ti
 
 ### Data Pipeline
 
+> *Historical — superseded by `data-manager`; see [MIGRATION-DATA-MANAGER](../MIGRATION-DATA-MANAGER.md).*
+
 Five independent pipelines with separate manifests: OSM extraction, border detection, Valhalla routing, Pelias geocoding, and vector tile generation. GTFS transit stop importer and Overture Maps places/addresses importer are included. Pipeline supports incremental re-runs and parallel execution.
 
 ## Dependencies

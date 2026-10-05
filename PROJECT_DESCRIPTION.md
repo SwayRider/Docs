@@ -12,7 +12,7 @@ SwayRider is a mature monorepo containing:
 
 - **7 Go backend services** — an API gateway (`swayrider-api`) plus six microservices communicating over gRPC
 - **Flutter mobile application** — a single Dart codebase covering both iOS and Android
-- **Python data pipeline** for processing OpenStreetMap data into vector tiles, routing graphs, and geocoding indices
+- **Python data-manager** (Flask + RQ; replaces the deprecated `data-pipeline`) for processing OpenStreetMap data into routing graphs, geocoding indices (incl. address interpolation and transit) and border data, and for fetching planet vector tiles
 
 Current geographic coverage is focused on **Western Europe**: Belgium, Netherlands, Luxembourg, France, Germany, and the Iberian Peninsula.
 
@@ -55,7 +55,7 @@ Exact feature distribution across tiers is to be determined.
 | MVP | Western Europe (current regions) |
 | Phase 2 | Pan-European expansion (Central, Northern, Southern, Eastern Europe) |
 
-The data pipeline and regional routing architecture are designed to support incremental geographic expansion by adding new Valhalla/Pelias regions.
+The data-manager and regional routing architecture are designed to support incremental geographic expansion by adding new Valhalla/Pelias regions.
 
 ## Architecture Overview
 
@@ -82,8 +82,8 @@ The data pipeline and regional routing architecture are designed to support incr
 ├──────────────┼──────────────┼───────────────────────────┤
 │ RegionService│ SearchService│ TilesService              │
 │ - Spatial    │ - Geocoding  │ - Vector tile serving     │
-│   queries    │ - Pelias fan │ - MBTiles (MVT)           │
-│ - Borders    │   out        │ - Multi-zoom hierarchy    │
+│   queries    │ - Pelias fan │ - PMTiles (MVT) + styles  │
+│ - Borders    │   out        │ - Fonts, sprites          │
 └──────────────┴──────────────┴───────────────────────────┘
                            │ gRPC / SQL
 ┌──────────────────────────▼──────────────────────────────┐
@@ -96,10 +96,12 @@ The data pipeline and regional routing architecture are designed to support incr
 └─────────────────┴──────────────┴────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│              Data Pipeline (Python)                      │
-│  OSM processing  ·  Vector tile generation              │
-│  Valhalla graph  ·  Pelias import  ·  Border detection  │
-└─────────────────────────────────────────────────────────┘
+│              Data Manager (Python, build host)           │
+│  OSM extraction  ·  Planet PMTiles + styles download    │
+│  Valhalla graph  ·  Pelias + interpolation  ·  Borders  │
+└──────────────────────────┬──────────────────────────────┘
+                           │ release copy (rsync) + activate
+                           ▼ Geodata (filesystem, per-artifact roots)
 ```
 
 ## Deployment
@@ -113,7 +115,7 @@ The Docker Compose layered architecture (layer-00 base, layer-10 geospatial, lay
 
 ## Key Design Decisions
 
-- **Custom vector tiles**: Map data is generated in-house from OpenStreetMap using a Python pipeline (Tippecanoe, Osmium). This provides full control over map styling, feature selection, and data freshness.
+- **Self-served vector tiles**: Planet PMTiles (Protomaps builds of OpenStreetMap) are fetched by the data-manager and served, with in-house styles, fonts and sprites, by `tilesservice`. This keeps full control over map styling and avoids per-request tile fees. (Previously tiles were built in-house with Tippecanoe; see [MIGRATION-DATA-MANAGER.md](./MIGRATION-DATA-MANAGER.md).)
 - **Regional routing**: Routes are calculated per-region with seamless border crossing handling, enabling horizontal scaling across geographies.
 - **gRPC-first**: All inter-service communication uses gRPC with Protocol Buffers. External APIs are exposed via gRPC-gateway.
 - **Cross-platform mobile**: A single Flutter (Dart) codebase serves both iOS and Android, sharing UI, business logic, and API integration.
