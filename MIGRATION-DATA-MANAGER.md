@@ -81,11 +81,22 @@ Built in data-manager (phases 0–6): configuration UI, downloads, OSM, border, 
 - **Keep the last 2 releases** per class for rollback; older ones are pruned by the deploy script.
 - **Activation is per class** and explicit (SIGHUP/poll, container restart, snapshot restore). It is a separate step from copy so a copy can be done ahead of time.
 
+### 3.1a Tiles live in an object store (decision 2026-10-05)
+
+The **tiles** class does not use a copied directory. The planet release (`tiles.pmtiles`, `manifest.json`, styles, glyphs, sprites) is uploaded to an S3-compatible object store (**Garage**, added to `infra/dev-mini/layer-00`), and `tilesservice` reads it with ranged GETs. This reverses the earlier "no object store" decision (one file on one host). Reasons: no 140 GB × 2 copy on every tilesservice host, one shared copy for replicas/k8s later, a laptop can point at a remote planet. The other classes (valhalla, pelias, geodata) stay copy-based as described below.
+
+- Bucket `swayrider-tiles`: `releases/<id>/…` (same tree as §3.3) plus a small pointer object `current.json` (`{"schema":1,"release":"<id>","prefix":"releases/<id>/","updated_at":"…"}`) that replaces the `current` symlink; a single PUT switches releases atomically and is written **last**. `tilesservice` polls the pointer and reloads; there is no activation step.
+- Two keys, from env/secret stores only (never in packages or the deploy configuration): read/write for the data-manager deploy, read-only for `tilesservice`.
+- The data-manager deploy for this class is the `s3` transport of the `compose-single-machine` driver (multipart upload, verify, write pointer, prune old release prefixes): see `data-manager/RELEASE-CONTRACT.md` §3.3.
+- `tilesservice` keeps a local-file backend (`file`) for tests, laptops with a small extract and a single host that does not want the store. Reader design: `io.ReaderAt` with a `file` and an `s3` implementation (`data-manager/TILESSERVICE-PMTILES.md`, update note at the top).
+- Garage and the credentials are infra work (Phase B, **B0**); until it exists, the tiles class can still be deployed with the copy procedure below using the `file` backend.
+
 ### 3.2 Per-class roots (env vars, `infra/dev-mini`)
 
 | Variable | Example mount | Content | Size guide | Notes |
 |---|---|---|---|---|
-| `TILES_ROOT` | `/mnt/ssd-a/swayrider/tiles` | PMTiles releases (+ legacy `base/` during transition) | ~140 GB × 2 | Replaces `TILES_DATA_PATH`; `TILES_CACHE_PATH` removed |
+| `TILES_ROOT` | `/mnt/ssd-a/swayrider/tiles` | legacy `base/` MBTiles during transition; PMTiles releases only with the `file` backend (§3.1a) | ~140 GB × 2 (`file` backend) | Replaces `TILES_DATA_PATH`; `TILES_CACHE_PATH` removed |
+| `GARAGE_DATA_PATH` / `GARAGE_META_PATH` | `/mnt/ssd-a/swayrider/garage/data` / `…/meta` | Object store for the PMTiles releases (§3.1a) | ~140 GB × 2 data; small metadata on a fast disk | New (Phase B, B0) |
 | `VALHALLA_ROOT` | `/mnt/ssd-b/swayrider/valhalla` | per-region tiles, admin/tz sqlite | tens of GB | Replaces `VALHALLA_DATA_PATH` |
 | `PELIAS_ROOT` | `/mnt/ssd-b/swayrider/pelias` | WOF sqlite, interpolation DBs, `pelias.json`, placeholder | tens of GB | Replaces `PELIAS_DATA_PATH` |
 | `GEODATA_ROOT` | `/mnt/ssd-b/swayrider/geodata` | `manifest.yml`, contours, border-crossings | < 1 GB | Replaces `GEODATA_PATH` |
@@ -95,7 +106,7 @@ Built in data-manager (phases 0–6): configuration UI, downloads, OSM, border, 
 
 ### 3.3 Folder structure
 
-Target host (example for dev-mini: benelux, france, germany):
+Target host (example for dev-mini: benelux, france, germany). The `tiles` tree below is the layout of a release; with the object store (§3.1a) it is the key layout under `releases/<id>/` in the bucket instead of a directory under `$TILES_ROOT`, and `current` is the `current.json` object:
 
 ```
 $TILES_ROOT/
@@ -154,7 +165,7 @@ deploy.sh list
 
 | Class | Switch | Service action |
 |---|---|---|
-| tiles | `ln -sfn releases/<id> current.tmp && mv -T current.tmp current` | tilesservice reloads on SIGHUP or by polling the symlink; **no restart**, in-flight requests finish on the old file. `/ready` confirms. |
+| tiles | `file` backend: `ln -sfn releases/<id> current.tmp && mv -T current.tmp current`; object store: write `current.json` last (§3.1a) | tilesservice reloads by polling the pointer (or SIGHUP, `file`); **no restart**, in-flight requests finish on the old file. `/ready` confirms. |
 | valhalla | same | `docker compose restart valhalla-<region>` (per region, sequentially). Entrypoint uses `valhalla_tiles.tar` |
 | pelias | same | Restore ES snapshot for the region → switch alias; restart `pelias-<region>-pip`, `pelias-<region>-api`, `pelias-interpolation` |
 | geodata | same | `docker compose restart regionservice` |
@@ -187,6 +198,8 @@ Each step lists the owner repo and how to verify it.
 
 ### Phase B: infra (dev-mini)
 
+- [ ] **B0** Garage object store in `infra/dev-mini/layer-00` (service + init: single-node layout, bucket `swayrider-tiles`, read/write and read-only keys from env; data/meta volumes `GARAGE_DATA_PATH`/`GARAGE_META_PATH`; S3 endpoint reachable from the data-manager host, e.g. over WireGuard). *Verify:* AWS CLI put/get, ranged GET, 1 GB multipart upload, pointer overwrite, read-only key cannot write, data survives restart.
+
 - [ ] **B1** Introduce the per-class roots (§3.2) in `layer-00/10/20 env.example` and compose; mounts point at `<ROOT>` (read-only where possible); drop `TILES_CACHE_PATH`.
 - [ ] **B2** Add `pelias-interpolation` to `layer-10/compose.yaml` on `net-sw-dev-pelias`: image from the Pelias interpolation build, `command: ./interpolate server <region>/address.db <region>/street.db`, port 4300 (host port in the 331xx range, one instance per region if DBs are per region), read-only mount of `${PELIAS_ROOT}/current/<region>/interpolation`.
 - [ ] **B3** Set `interpolation.client = {adapter: http, host: http://pelias-interpolation:4300}` in each region's API `pelias.json` (the data-manager `pelias` stage currently emits `adapter = null`; extend it or patch at deploy).
@@ -198,12 +211,12 @@ Each step lists the owner repo and how to verify it.
 
 ### Phase C: tilesservice (see `data-manager/TILESSERVICE-PMTILES.md`)
 
-- [ ] **C1** PR 1: PMTiles v3 reader (single file); validate header `tile_type=MVT`, `tile_compression=gzip`; zoom limits from header (0–15) instead of hard-coded 16; 204 outside range.
-- [ ] **C2** PR 2: release holder: `TILES_ROOT/current` symlink resolved at start and on SIGHUP/poll; atomic swap; add `/ready`.
+- [ ] **C1** PR 1: PMTiles v3 reader over `io.ReaderAt` (own implementation, `file` and `s3` backends); validate header `tile_type=MVT`, `tile_compression=gzip`; zoom limits from header (0–15) instead of hard-coded 16; 204 outside range.
+- [ ] **C2** PR 2: release holder: `current.json` (object store) or the `current` symlink (`file` backend) resolved at start and by polling (SIGHUP for `file`); manifest read from the same place; atomic swap; add `/ready`.
 - [ ] **C3** PR 3: routing `/{tileset}/{z}/{x}/{y}` with `base` (legacy MBTiles) and `planet` (PMTiles) side by side; `/{tileset}/tiles.json`.
 - [ ] **C4** PR 4: styles from the release (`styles/<id>/<version>/{light,dark}.json`) with `{{.TilesBaseURL}}` and `{{.Tileset}}`, ETag; `/fonts/{fontstack}/{file}`; `/sprites/{file}`.
 - [ ] **C5** PR 5 (after cutover): remove `internal/tilecache`, `internal/mbtiles`, `internal/tileindex`, cgo/go-sqlite3 in the Dockerfile.
-- [ ] **C6** Compose layer-20: `${TILES_ROOT}:/data/tiles:ro`, env `TILES_ROOT=/data/tiles`.
+- [ ] **C6** Compose layer-20: S3 endpoint, bucket and read-only key env for `tilesservice` (no tile bind mount for `planet`); legacy `base` keeps `${TILES_ROOT}/base:/data/tiles:ro` until Phase G.
 - [ ] *Verify:* tile/style/glyph/sprite through the gateway; atomic reload while under load; legacy `base` still served.
 
 ### Phase D: swayrider-api
@@ -243,7 +256,7 @@ Each step lists the owner repo and how to verify it.
 
 Current state: `TILES_PATH` required; `internal/tileindex/index.go` maps z≤6 → `L0.mbtiles`, z≤10 → `L1/`, z≥11 → `L2/` grid files and merges overlapping cells (`mbtiles.MergeTiles`); `internal/mbtiles/reader.go:34` opens sqlite `?mode=ro`, flips XYZ→TMS; `http_tile.go:75` ignores `{tileset}`; z>16 → 400 (`:95`); caching in `internal/tilecache`.
 
-Target: single PMTiles file per release, no merging, no caches, no cgo. Config: `TILES_ROOT` replaces `TILES_PATH`/`DISK_CACHE_*`/`COMPRESSION_*`; keep `STYLES_PATH` only if styles are not yet shipped in the release. Zoom range: 0–15 (clients over-zoom; verify MapLibre `maxzoom: 15`). Legacy `base` remains until Phase G. Scope `tiles:serve` retained. Details and PR split: `data-manager/TILESSERVICE-PMTILES.md`.
+Target: single PMTiles file per release, no merging, no caches, no cgo. Source: the object store (`s3`, decision §3.1a) or a local directory (`file`); manifest, styles, glyphs and sprites come from the same release prefix, the small assets cached in memory. Config (names provisional, fixed in the PRs): `PMTILES_URL` in PR 1, then a source base (`s3://swayrider-tiles` or `file:///data/tiles`) with `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`; these replace `TILES_PATH`/`DISK_CACHE_*`/`COMPRESSION_*`; keep `STYLES_PATH` only if styles are not yet shipped in the release. Zoom range: 0–15 (clients over-zoom; verify MapLibre `maxzoom: 15`). Legacy `base` remains until Phase G. Scope `tiles:serve` retained. Details and PR split: `data-manager/TILESSERVICE-PMTILES.md`.
 
 ### 5.2 swayrider-api
 
@@ -284,7 +297,7 @@ ES_SNAPSHOTS_PATH=/mnt/ssd-c/swayrider/es-snapshots
 Compose volume changes (sketch):
 
 ```yaml
-tilesservice:       { volumes: ["${TILES_ROOT}:/data/tiles:ro"], environment: { TILES_ROOT: /data/tiles } }
+tilesservice:       { environment: { S3_ENDPOINT: …, S3_ACCESS_KEY_ID: …, S3_SECRET_ACCESS_KEY: … /* read-only key, planet from Garage, §3.1a */ }, volumes: ["${TILES_ROOT}/base:/data/tiles:ro"] /* legacy base only */ }
 regionservice:      { volumes: ["${GEODATA_ROOT}/current:/data/geodata:ro"] }
 valhalla-benelux:   { volumes: ["${VALHALLA_ROOT}/current/benelux:/custom_files",
                                 "./valhalla/benelux/valhalla.json:/custom_files/valhalla.json:ro"] }
@@ -314,6 +327,9 @@ Disk guide for dev-mini (3 regions): tiles 2 × 140 GB; ES data several hundred 
 | Border/Valhalla unverified | Output may differ from legacy | Compare with a legacy run (E1) |
 | `current` symlink + bind mounts | Container keeps old inode | Restart in activate; tiles resolves itself |
 | Tiles auth inconsistency | Docs vs code disagree | D3 |
+| Object store latency | Every uncached tile is a ranged GET (about one round trip) instead of a page-cached local read | Directory cache in memory; measure on dev-mini before adding a tile cache |
+| Object store credentials/availability | A new service holds the planet; wrong key scopes or a down store stops the map | Read-only key for tilesservice, separate deploy key, health check in `/ready`; `file` backend as fallback |
+| Upload of ~140 GB | Slow or interrupted multipart upload | Resumable per-object upload, verify before writing `current.json` |
 
 ---
 
