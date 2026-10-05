@@ -88,7 +88,7 @@ Output is published as immutable releases and **copied** (rsync over ssh, checks
 
 Maps are rendered client-side with MapLibre from self-served vector tiles:
 
-- **Tiles**: Protomaps planet **PMTiles v3** (gzip MVT, z0–15, client over-zoom), downloaded by `data-manager` and served by `tilesservice` from a release directory. Replaces the in-house Tippecanoe/MBTiles L0–L3 hierarchy (legacy `base` tileset is served side-by-side until cutover).
+- **Tiles**: Protomaps planet **PMTiles v3** (gzip MVT, z0–15, client over-zoom), downloaded by `data-manager`, stored in an S3-compatible object store (Garage, self-hosted; decision 2026-10-05, reversing the earlier "no object store") and read by `tilesservice` with ranged GETs (a local-file backend remains for tests and laptops). Replaces the in-house Tippecanoe/MBTiles L0–L3 hierarchy (legacy `base` tileset is served side-by-side until cutover).
 - **Styles, glyphs, sprites**: Shipped in the same release and served by `tilesservice`; clients never read the file directly.
 - **Full control**: Styling is managed internally (motorcycle-specific styling: road surface, scenic highlights, fuel stops)
 - **Cost**: No per-request tile fees (vs Mapbox, Google Maps)
@@ -145,7 +145,7 @@ Service containers are pushed to GitHub Container Registry (`ghcr.io/swayrider`)
 | Technology | Status | Reason |
 |------------|--------|--------|
 | React web auth portal | Deprecated | Mobile-first strategy; web removed from scope |
-| Minio (object storage) | Removed | Mail templates moved to database-backed storage |
+| Minio (object storage) | Removed | Mail templates moved to database-backed storage. (Object storage returns for the planet tiles, as Garage; see Tiles above.) |
 | Kotlin/Jetpack Compose Android prototype | Removed | Replaced by the Flutter app (single iOS + Android codebase) |
 
 ## Decisions Pending

@@ -18,7 +18,7 @@ This file records the key architectural and strategic decisions that shape the r
 
 ### Custom Vector Tiles (in-house, MapLibre)
 
-**Decision**: Map tiles were originally generated in-house from OpenStreetMap using the Python data pipeline (Tippecanoe, Osmium) and served as MBTiles via TilesService. *Updated 2026-10-05:* tiles move to the Protomaps planet PMTiles fetched by `data-manager` and served by TilesService with styles, fonts and sprites; MBTiles (`base` tileset) is retired after cutover. See [MIGRATION-DATA-MANAGER](../MIGRATION-DATA-MANAGER.md). Rendering is done client-side with MapLibre.
+**Decision**: Map tiles were originally generated in-house from OpenStreetMap using the Python data pipeline (Tippecanoe, Osmium) and served as MBTiles via TilesService. *Updated 2026-10-05:* tiles move to the Protomaps planet PMTiles fetched by `data-manager` and served by TilesService with styles, fonts and sprites; MBTiles (`base` tileset) is retired after cutover. *Updated later on 2026-10-05:* the PMTiles release is stored in a self-hosted S3-compatible object store (Garage) and read with ranged GETs instead of being copied to every tilesservice host. See [MIGRATION-DATA-MANAGER](../MIGRATION-DATA-MANAGER.md). Rendering is done client-side with MapLibre.
 
 **Rationale**: Full control over feature selection, styling, and data freshness. No per-request tile costs (vs. Mapbox/Google Maps). Offline support is a first-class requirement.
 
