@@ -54,50 +54,45 @@ UI (widgets) → ViewModel → Repository → API client / storage
 - **Separation of concerns**: UI never calls the API client directly; repositories mediate all data access
 - **Manual DI**: Provider wiring in the app entry point; no code-gen DI framework
 
-## Data Pipeline
+## Data Manager
 
-### Python
+> The Python `data-pipeline/` (CLI scripts, Tippecanoe/MBTiles tiles, five independent pipelines with tarball distribution) is **deprecated** and replaced by `data-manager/`. Steps and deployment strategy: [MIGRATION-DATA-MANAGER.md](./MIGRATION-DATA-MANAGER.md).
 
-Geodata processing uses Python:
+### Flask + RQ + SQLite
 
-- **GeoPandas/Shapely**: Rich spatial data manipulation
-- **Osmium**: Fast OSM PBF parsing and extraction
-- **Ecosystem**: Tippecanoe, GDAL/ogr2ogr integrate naturally
-- **Flexibility**: Rapid iteration on tile generation logic
+`data-manager` is a Flask UI (server-rendered Jinja + htmx) with an RQ worker. Flask never runs domain logic; it reads/writes SQLite (WAL, SQLAlchemy + Alembic) and enqueues jobs. Long builds run in the worker; configuration is authored in a map UI (countries → regions → automatic overlap and border pairs) rather than YAML.
 
-### Tippecanoe
+- **GeoPandas/Shapely/pyogrio**: spatial work (polygons, overlap, borders)
+- **Osmium/GDAL**: planet extraction per country in one pass, region extracts
+- **Docker**: temporary per-region Elasticsearch for Pelias imports
 
-Vector tile generation from GeoJSON:
+### Stages with typed assets
 
-- **Control**: Fine-grained zoom-dependent simplification and feature dropping
-- **Performance**: Optimized MBTiles output for MapLibre rendering
-- **Tuning flags**: `--coalesce-densest-as-needed`, `--simplification`, `--buffer` for visual quality
+Each stage declares the asset types it `produces` and `consumes`; order is resolved by topological sort. A run ends in `awaiting_review`, and only **approved** assets feed later stages.
 
-### Five Independent Pipelines
+| Stage family | Output |
+|--------------|--------|
+| OSM (`download-planet`, `extract-countries`, `osm-extract`) | Per-country and per-region `.osm.pbf` |
+| Border | Region outlines (core/extended), border-crossing CSVs |
+| Valhalla | Routing tiles, admin/timezone sqlite, polylines per region |
+| Pelias | ES index snapshot, config, patched WOF, interpolation DBs, transit (GTFS), Overture/OpenAddresses data |
+| Tiles/styles | Protomaps planet PMTiles (download), styles, glyphs, sprites |
 
-Data generation is split into independent pipelines with separate manifests:
+### Release + copy deployment
 
-| Pipeline | Output | Dependency |
-|----------|--------|------------|
-| OSM extraction | Regional `.osm.pbf` files | None |
-| Border detection | Region contours, border crossings | OSM |
-| Valhalla routing | Routing graph tiles | OSM |
-| Pelias geocoding | Geocoding index | OSM |
-| Tiles | MBTiles vector tiles | None (independent) |
-
-This allows partial re-runs and parallel execution where dependencies permit.
+Output is published as immutable releases and **copied** (rsync over ssh, checksum-verified) to the target server, which switches a per-artifact `current` symlink. This lets the data-manager run on a separate build host and artifact classes live on separate drives. Publish/deploy is planned (migration Phase A4).
 
 ## Map Rendering
 
 ### Custom Vector Tiles (MapLibre)
 
-Maps are rendered from in-house vector tiles using MapLibre:
+Maps are rendered client-side with MapLibre from self-served vector tiles:
 
-- **Full control**: Feature selection, simplification, styling all managed internally
+- **Tiles**: Protomaps planet **PMTiles v3** (gzip MVT, z0–15, client over-zoom), downloaded by `data-manager` and served by `tilesservice` from a release directory. Replaces the in-house Tippecanoe/MBTiles L0–L3 hierarchy (legacy `base` tileset is served side-by-side until cutover).
+- **Styles, glyphs, sprites**: Shipped in the same release and served by `tilesservice`; clients never read the file directly.
+- **Full control**: Styling is managed internally (motorcycle-specific styling: road surface, scenic highlights, fuel stops)
 - **Cost**: No per-request tile fees (vs Mapbox, Google Maps)
-- **Offline support**: MBTiles files can be bundled or downloaded for offline use
-- **Customization**: Motorcycle-specific styling (road surface, scenic highlights, fuel stops)
-- **Zoom hierarchy**: L0 (world) → L1 (continental) → L2 (regional) → L3 (local) for progressive detail
+- **Offline support**: Strategy pending (see KEY_DECISIONS); PMTiles supports range-based regional extracts
 
 Alternatives considered:
 - **Mapbox**: Per-request pricing incompatible with offline-first strategy
