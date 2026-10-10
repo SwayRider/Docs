@@ -1,5 +1,7 @@
 # TASK_005 — Add UK Address Data (OS AddressBase Open)
 
+> **Note (2026-10-10):** this task is still planned and was written against the legacy, deprecated `data-pipeline`; its `data-pipeline/...` paths are history. If it is built, it belongs in `data-manager`'s Pelias stages (`datamanager/stages/pelias.py`, `datamanager/services/pelias_data.py`, `datamanager/services/pelias_sources.py`). See [MIGRATION-DATA-MANAGER](../../MIGRATION-DATA-MANAGER.md).
+
 **Status**: Planned
 
 ## Overview

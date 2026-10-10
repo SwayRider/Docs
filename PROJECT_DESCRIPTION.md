@@ -12,7 +12,7 @@ SwayRider is a mature monorepo containing:
 
 - **7 Go backend services** — an API gateway (`swayrider-api`) plus six microservices communicating over gRPC
 - **Flutter mobile application** — a single Dart codebase covering both iOS and Android
-- **Python data-manager** (Flask + RQ; replaces the deprecated `data-pipeline`) for processing OpenStreetMap data into routing graphs, geocoding indices (incl. address interpolation and transit) and border data, and for fetching planet vector tiles
+- **Python data-manager** (Flask + RQ; replaces the deprecated `data-pipeline`, see [MIGRATION-DATA-MANAGER](MIGRATION-DATA-MANAGER.md)) for processing OpenStreetMap data into routing graphs, geocoding indices (incl. address interpolation and transit) and border data, for fetching planet vector tiles, and for packaging and deploying all of it to an environment (first deployed to the dev-mini stack in October 2026)
 
 Current geographic coverage is focused on **Western Europe**: Belgium, Netherlands, Luxembourg, France, Germany, and the Iberian Peninsula.
 

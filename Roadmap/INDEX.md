@@ -9,4 +9,4 @@
 | [MILESTONE_005](./MILESTONE_005.md) | Account Management | Planned |
 | [MILESTONE_006](./MILESTONE_006.md) | Polish & Play Store Release | Planned |
 
-Cross-cutting: the `data-pipeline` → `data-manager` migration (PMTiles tiles, Pelias interpolation, copy-based deploy) is tracked in [`../MIGRATION-DATA-MANAGER.md`](../MIGRATION-DATA-MANAGER.md).
+Cross-cutting: `data-pipeline` is deprecated and replaced by `data-manager`. The migration (PMTiles tiles, Pelias interpolation, package-and-deploy; first deploy to dev-mini done, rollback drill and cutover open) is tracked in [`../MIGRATION-DATA-MANAGER.md`](../MIGRATION-DATA-MANAGER.md).
