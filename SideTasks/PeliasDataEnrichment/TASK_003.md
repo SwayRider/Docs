@@ -1,5 +1,7 @@
 # TASK_003 — Add Overture Maps Places & Addresses
 
+> **Superseded implementation (2026-10-10):** this task was implemented in the legacy, deprecated `data-pipeline`. The equivalent now lives in `data-manager`'s Pelias stages (`datamanager/stages/pelias.py`, `datamanager/services/pelias_data.py`, `datamanager/services/pelias_interpolation.py`; downloads in `datamanager/services/pelias_sources.py` and `datamanager/services/overture.py`). The `data-pipeline/...` paths below are kept as history. See [MIGRATION-DATA-MANAGER](../../MIGRATION-DATA-MANAGER.md).
+
 **Status**: Done
 
 ## Overview

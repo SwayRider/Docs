@@ -1,5 +1,7 @@
 # TASK_004 — Add GTFS Transit Stops
 
+> **Superseded implementation (2026-10-10):** this task was implemented in the legacy, deprecated `data-pipeline`. The equivalent now lives in `data-manager`'s Pelias stages (`datamanager/stages/pelias.py`, `datamanager/services/pelias_data.py`, `datamanager/services/pelias_interpolation.py`; downloads in `datamanager/services/pelias_sources.py` and `datamanager/services/overture.py`). The `data-pipeline/...` paths below are kept as history. See [MIGRATION-DATA-MANAGER](../../MIGRATION-DATA-MANAGER.md).
+
 **Status**: Done (importer wired) — feeds currently disabled pending source verification
 
 The `transit` importer and `gtfs_feeds` plumbing described below are implemented in `config-dev.yml`, but the feed URLs are currently commented out (`# TODO: re-enable gtfs_feeds when reliable data sources are confirmed`) rather than active. See `data-pipeline/config/gtfs-sources.md` for per-feed status.
