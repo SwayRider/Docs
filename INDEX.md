@@ -10,3 +10,4 @@
 | Auth Improvement Plan | Security hardening roadmap for authservice — status vs. current code | [AuthImprovement/INDEX.md](./AuthImprovement/INDEX.md) |
 | Roadmap | Product milestones from foundation through Play Store release | [Roadmap/INDEX.md](./Roadmap/INDEX.md) |
 | Side Tasks | Standalone improvement efforts outside the main roadmap | [SideTasks/INDEX.md](./SideTasks/INDEX.md) |
+| High-Priority Security Enhancements | Cross-cutting security work to do soon (e.g. per-service database users) | [HIGH_PRIO_SECURITY_ENHANCEMENTS.md](./HIGH_PRIO_SECURITY_ENHANCEMENTS.md) |
